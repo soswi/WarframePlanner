@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warframe Planner</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<header class="banner">
+  <h1>WARFRAME ACTIVITY &amp; OPERATIONS PLANNER</h1>
+  <p class="subtitle">Mission objectives, syndicate grinds, mastery prerequisites, and status tracking</p>
+</header>
+
+<section class="kpi-row" id="kpiRow"></section>
+
+<div class="progress-shell"><div class="progress-fill" id="progressFill"></div></div>
+
+<nav class="toolbar">
+  <button class="btn icon primary" id="btnAdd" aria-label="Add task"
+          data-tooltip="Add task" data-tooltip-always>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+
+  <button class="btn icon" id="btnDuplicate" disabled aria-label="Duplicate selected"
+          data-tooltip="Duplicate selected tasks" data-tooltip-always>
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="9" y="9" width="11" height="11" rx="2"/>
+      <path d="M5 15V6a2 2 0 0 1 2-2h9"/>
+    </svg>
+  </button>
+
+  <button class="btn icon danger" id="btnDelete" disabled aria-label="Delete selected"
+          data-tooltip="Delete selected tasks" data-tooltip-always>
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 7h16M10 7V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2"/>
+      <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/>
+      <path d="M10 11v6M14 11v6"/>
+    </svg>
+  </button>
+
+  <span class="spacer"></span>
+  <input type="search" id="search" class="search" placeholder="Filter...">
+  <select class="picker" id="themePicker" title="Theme"></select>
+
+  <span class="toolbar-divider"></span>
+
+  <button class="btn icon" id="btnExport" aria-label="Export"
+          data-tooltip="Export everything to a JSON file" data-tooltip-always>
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3v12M8 11l4 4 4-4"/>
+      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+    </svg>
+  </button>
+
+  <button class="btn icon" id="btnImport" aria-label="Import"
+          data-tooltip="Import from a JSON file" data-tooltip-always>
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 15V3M8 7l4-4 4 4"/>
+      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+    </svg>
+  </button>
+
+  <button class="btn icon" id="btnDefs" aria-label="Definitions"
+          data-tooltip="Definitions and settings" data-tooltip-always>
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="3.2"/>
+      <path d="M19.4 15a1.6 1.6 0 0 0 .32 1.77l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-1 1.47V21a2 2 0 0 1-4 0v-.09a1.6 1.6 0 0 0-1.05-1.47 1.6 1.6 0 0 0-1.77.32l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.6 1.6 0 0 0 .32-1.77 1.6 1.6 0 0 0-1.47-1H3a2 2 0 0 1 0-4h.09a1.6 1.6 0 0 0 1.47-1.05 1.6 1.6 0 0 0-.32-1.77l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.6 1.6 0 0 0 1.77.32H9a1.6 1.6 0 0 0 1-1.47V3a2 2 0 0 1 4 0v.09a1.6 1.6 0 0 0 1 1.47 1.6 1.6 0 0 0 1.77-.32l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.6 1.6 0 0 0-.32 1.77V9a1.6 1.6 0 0 0 1.47 1H21a2 2 0 0 1 0 4h-.09a1.6 1.6 0 0 0-1.47 1z"/>
+    </svg>
+  </button>
+
+  <span class="toolbar-divider"></span>
+
+  <button class="btn icon quit" id="btnQuit" aria-label="Quit"
+          data-tooltip="Shut down Warframe Planner" data-tooltip-always>
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M16 17l5-5-5-5"/>
+      <path d="M21 12H9"/>
+      <path d="M12 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/>
+    </svg>
+  </button>
+
+  <input type="file" id="fileInput" accept="application/json" hidden>
+</nav>
+
+<nav class="tabstrip" id="layoutTabs" role="tablist"></nav>
+
+<main id="layoutRoot"></main>
+
+<div class="modal-backdrop" id="defsModal" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Definitions</h2>
+      <button class="icon-btn" id="btnCloseDefs">&times;</button>
+    </div>
+    <div class="modal-body" id="defsBody"></div>
+    <div class="modal-foot">
+      <div class="settings-row" id="settingsRow"></div>
+      <button class="btn primary" id="btnSaveDefs">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="curtain" id="curtain" hidden>
+  <div class="curtain-panel">
+    <h2>Warframe Planner has stopped</h2>
+    <p>The process has shut down. Your data is saved. You can close this tab.</p>
+    <p class="curtain-note">Start it again from the executable.</p>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/static/markdown.js"></script>
+<script src="/static/tooltip.js"></script>
+<script src="/static/themes.js"></script>
+<script src="/static/layouts.js"></script>
+<script src="/static/board.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
