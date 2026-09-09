@@ -30,9 +30,15 @@ python main.py
 The app picks a free port, prints the address and opens your default browser.
 Closing the terminal stops the server.
 
-The executable is built windowed, so anything it prints is invisible. If the
-browser does not open, the address is also written to `last-session.txt` beside
-the database (see the table below).
+The executable is built windowed. On Windows that means the process starts with
+no stdout or stderr at all, so anything printed goes to `planner.log` beside the
+database instead. If the browser does not open, the address is also in
+`session.json` in the same folder (see the table below).
+
+**One instance only.** Launching the executable again does not start a second
+server: it finds the running one, opens a browser tab pointing at it, and exits.
+Closing the tab leaves the process running. To actually stop it, use the red
+quit button at the right of the toolbar.
 
 ## Building the executable
 
@@ -89,6 +95,8 @@ override the directory. For backups, copy `planner.db` or use **Export**.
   instead of leaving the app unstyled
 - JSON export and import, in replace or merge mode. Merging renumbers colliding
   ids and rewrites every dependency reference accordingly
+- A quit button that shuts the process down from the page, since closing the tab
+  does not stop the server
 - Sorting, text filter, multi-row selection, duplicate and delete. A duplicate
   keeps every field and the dependency list, clears status and Last Updated,
   and lands directly below its source
@@ -188,7 +196,12 @@ in `build_service()`.
 
 ## Limitations
 
-- One instance at a time. The server binds `127.0.0.1` only, but two processes
+- A windowed build has no console. Startup problems land in `planner.log`; there
+  is nowhere else for them to go.
+- Single-instance detection reads `session.json` and verifies the address over
+  HTTP before reusing it, so a file left behind by a crash is discarded rather
+  than trusted. Two executables launched in the same second can still both
+  start; the second one takes a different port. The server binds `127.0.0.1` only, but two processes
   would write to the same database.
 - Migrations are forward-only and there is no downgrade path. Opening a newer
   database with an older build will fail.
