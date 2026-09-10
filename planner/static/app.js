@@ -4,6 +4,11 @@ const { ThemeRegistry, BUILTIN_THEMES } = window.PlannerThemes;
 const { TableLayout, BoardLayout, LayoutRegistry, SelectionModel, escapeHtml } =
   window.PlannerLayouts;
 const { TooltipController } = window.PlannerTooltip;
+const { Dropdown } = window.PlannerDropdown;
+
+// How long a status or priority edit waits before it is written and the list
+// reorders around it.
+const DEFERRED_COMMIT_DELAY_MS = 1000;
 const { MarkdownRenderer } = window.PlannerMarkdown;
 
 /** Thin fetch wrapper. Every mutating call returns the full snapshot. */
@@ -74,6 +79,12 @@ class Store {
   }
 
   doneStatus() { return this.settings.done_status || "Done"; }
+
+  /** Status pinned to the front of every list, or "" when disabled. */
+  highlightStatus() { return (this.settings.highlight_status || "").trim(); }
+
+  /** Colour to accent a pinned task with, taken from the status definition. */
+  highlightColor() { return this.colorFor("status", this.highlightStatus()); }
 }
 
 class Toast {
@@ -111,7 +122,7 @@ class DefinitionsModal {
   open() {
     this.body.innerHTML = this.kinds.map((kind) => `
       <div class="def-group" data-kind="${kind}">
-        <h3>${kind}</h3>
+        <h3>${kind} <span class="def-hint">drag to reorder</span></h3>
         <div class="def-list">
           ${(this.store.definitions[kind] || []).map((d) => this.rowHtml(d.value, d.color)).join("")}
         </div>
@@ -122,8 +133,10 @@ class DefinitionsModal {
       group.querySelector(".add-def").addEventListener("click", () => {
         group.querySelector(".def-list").insertAdjacentHTML("beforeend", this.rowHtml("", "#94a3b8"));
         this.bindRemovals(group);
+        this.bindReordering(group);
       });
       this.bindRemovals(group);
+      this.bindReordering(group);
     });
 
     const statuses = this.store.valuesFor("status");
@@ -136,9 +149,20 @@ class DefinitionsModal {
       </label>`;
 
     const gateOn = this.store.settings.enforce_dependency_gate !== "false";
+    const pinned = this.store.settings.highlight_status || "";
+    const pinnedSelect = `
+      <label>Pinned status
+        <select data-setting="highlight_status">
+          <option value=""${pinned ? "" : " selected"}>None</option>
+          ${statuses.map((value) =>
+            `<option${value === pinned ? " selected" : ""}>${escapeHtml(value)}</option>`).join("")}
+        </select>
+      </label>`;
+
     this.settingsRow.innerHTML =
       statusSelect("done_status", "Completion status")
       + statusSelect("reset_status", "Status after reset")
+      + pinnedSelect
       + `<label>Dependency gate
            <select data-setting="enforce_dependency_gate">
              <option value="true"${gateOn ? " selected" : ""}>Block completion</option>
@@ -147,20 +171,116 @@ class DefinitionsModal {
          </label>`;
 
     this.backdrop.hidden = false;
+    Dropdown.enhanceAll(this.backdrop);
   }
 
   rowHtml(value, color) {
+    // Only the handle is draggable, so the text and colour inputs keep their
+    // normal click-and-select behaviour.
     return `<div class="def-row">
-      <input type="color" value="${color}">
+      <span class="def-grip" draggable="true" title="Drag to reorder" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/>
+          <circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/>
+          <circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/>
+        </svg>
+      </span>
+      <span class="color-field">
+        <input type="color" value="${color}">
+        <input type="text" class="hex" value="${escapeHtml(color)}" spellcheck="false"
+               maxlength="7" aria-label="Hex colour">
+      </span>
       <input type="text" value="${escapeHtml(value)}" placeholder="value">
-      <button type="button" title="Remove">&times;</button>
+      <button type="button" class="def-remove" title="Remove">&times;</button>
     </div>`;
   }
 
   bindRemovals(group) {
-    group.querySelectorAll(".def-row button").forEach((button) => {
+    group.querySelectorAll(".def-remove").forEach((button) => {
       button.onclick = () => button.closest(".def-row").remove();
     });
+    this.bindColorFields(group);
+  }
+
+  /** Keep the swatch and the typed hex in step, in both directions. */
+  bindColorFields(group) {
+    group.querySelectorAll(".color-field").forEach((field) => {
+      const swatch = field.querySelector('input[type="color"]');
+      const hex = field.querySelector(".hex");
+
+      swatch.oninput = () => {
+        hex.value = swatch.value;
+        hex.classList.remove("invalid");
+      };
+
+      hex.oninput = () => {
+        const value = hex.value.trim();
+        const valid = /^#[0-9a-fA-F]{6}$/.test(value);
+        hex.classList.toggle("invalid", Boolean(value) && !valid);
+        if (valid) swatch.value = value;
+      };
+
+      // Anything unparseable falls back to the swatch rather than being saved.
+      hex.onblur = () => {
+        if (!/^#[0-9a-fA-F]{6}$/.test(hex.value.trim())) hex.value = swatch.value;
+        hex.classList.remove("invalid");
+      };
+    });
+  }
+
+  /**
+   * Vertical drag-to-reorder within one definition list.
+   *
+   * Rows are moved in the DOM as the pointer passes each midpoint, so the list
+   * previews the result while dragging. Order is read back from the DOM on
+   * save, which is why no separate model needs updating here.
+   */
+  bindReordering(group) {
+    const list = group.querySelector(".def-list");
+
+    group.querySelectorAll(".def-grip").forEach((grip) => {
+      const row = grip.closest(".def-row");
+
+      grip.addEventListener("dragstart", (event) => {
+        this.draggedRow = row;
+        row.classList.add("dragging");
+        event.dataTransfer.effectAllowed = "move";
+        // Firefox will not start a drag without a payload.
+        event.dataTransfer.setData("text/plain", "");
+      });
+
+      grip.addEventListener("dragend", () => {
+        row.classList.remove("dragging");
+        this.draggedRow = null;
+      });
+    });
+
+    list.addEventListener("dragover", (event) => {
+      const row = this.draggedRow;
+      if (!row || !list.contains(row)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+
+      const after = this.rowAfterPointer(list, event.clientY);
+      if (after === row) return;
+      if (after === null) {
+        list.appendChild(row);
+      } else {
+        list.insertBefore(row, after);
+      }
+    });
+
+    list.addEventListener("drop", (event) => event.preventDefault());
+  }
+
+  /** First row whose midpoint sits below the pointer, or null past the end. */
+  rowAfterPointer(list, y) {
+    const others = Array.from(list.querySelectorAll(".def-row:not(.dragging)"));
+    for (const candidate of others) {
+      const box = candidate.getBoundingClientRect();
+      if (y < box.top + box.height / 2) return candidate;
+    }
+    return null;
   }
 
   close() { this.backdrop.hidden = true; }
@@ -173,7 +293,7 @@ class DefinitionsModal {
         const group = this.body.querySelector(`.def-group[data-kind="${kind}"]`);
         const entries = Array.from(group.querySelectorAll(".def-row")).map((row) => ({
           value: row.querySelector('input[type="text"]').value.trim(),
-          color: row.querySelector('input[type="color"]').value,
+          color: row.querySelector(".hex").value.trim().toLowerCase(),
         })).filter((entry) => entry.value);
         snapshot = await this.api.saveDefinitions(kind, entries);
       }
@@ -211,6 +331,7 @@ class PlannerApp {
     this.tooltip = new TooltipController({
       formatters: { markdown: (text) => this.markdown.render(text) },
     }).attach();
+    this.pendingEdits = new Map();
     this.selection = new SelectionModel(() => this.refreshSelectionUi());
     this.layoutRoot = document.getElementById("layoutRoot");
     this.layout = null;
@@ -229,6 +350,7 @@ class PlannerApp {
       tooltip: this.tooltip,
       markdown: this.markdown,
       commit: (id, changes) => this.commit(id, changes),
+      commitDelayed: (id, changes) => this.commitDelayed(id, changes),
       persist: (settings) => this.persist(settings),
       focusTask: (id) => this.focusTask(id),
     };
@@ -282,8 +404,10 @@ class PlannerApp {
       const file = fileInput.files[0];
       if (!file) return;
       const merge = confirm(
-        "OK = merge into the current tasks (colliding ids get renumbered).\n" +
-        "Cancel = replace everything with the file."
+        "OK = merge: a task with a matching id or name is updated in place, "
+        + "anything else is added.\n\n"
+        + "Cancel = replace: everything currently here is discarded and the "
+        + "file becomes the whole planner."
       );
       try {
         this.store.apply(await this.api.importFile(file, merge));
@@ -313,6 +437,24 @@ class PlannerApp {
     } catch (error) {
       this.toast.show(error.message, true);
     }
+  }
+
+  /**
+   * Hold an edit for a moment before sending it.
+   *
+   * Status and priority changes reorder the list, and reordering under the
+   * pointer the instant a value is picked is disorienting — especially when
+   * stepping through values with the wheel. The pause also collapses a burst
+   * of wheel steps into a single write. The cell repaints itself immediately,
+   * so only the reordering waits.
+   */
+  commitDelayed(id, changes) {
+    const key = `${id}:${Object.keys(changes).join(",")}`;
+    clearTimeout(this.pendingEdits.get(key));
+    this.pendingEdits.set(key, setTimeout(() => {
+      this.pendingEdits.delete(key);
+      this.commit(id, changes);
+    }, DEFERRED_COMMIT_DELAY_MS));
   }
 
   async commit(id, changes) {
@@ -370,6 +512,7 @@ class PlannerApp {
     themePicker.innerHTML = this.themes.list().map((theme) =>
       `<option value="${theme.key}">${escapeHtml(theme.label)}</option>`).join("");
     themePicker.value = this.themes.activeKey || "zariman";
+    Dropdown.enhanceAll(document.querySelector(".toolbar"));
 
     this.renderTabs();
   }

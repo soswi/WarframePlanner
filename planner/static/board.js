@@ -5,9 +5,15 @@
 (function () {
 
   const { Layout, escapeHtml } = window.PlannerLayouts;
+  const { Dropdown } = window.PlannerDropdown;
 
   const UNGROUPED = "\u0000none";
   const EMPTY_BUCKET = "\u0000empty";
+
+  // Height of one implicit grid row. Groups span a whole number of these, which
+  // is how a masonry-style pack is built out of an ordinary CSS grid: the
+  // smaller the unit, the tighter the fit and the more rows the browser tracks.
+  const ROW_UNIT_PX = 8;
 
   /**
    * Card board. Shows only what the brief asked for — title, description and an
@@ -37,6 +43,7 @@
       this.groupBy = "status";
       this.cardSize = "comfortable";
       this.dragging = null;
+      this.onResize = () => this.scheduleLayout();
     }
 
     mount(root) {
@@ -82,12 +89,74 @@
         this.render();
       });
 
+      window.addEventListener("resize", this.onResize);
+
+      Dropdown.enhanceAll(root.querySelector(".board-controls"));
+
       const sizePicker = root.querySelector('[data-role="card-size"]');
       sizePicker.value = this.cardSize;
       sizePicker.addEventListener("change", () => {
         this.cardSize = sizePicker.value;
         this.board.dataset.size = this.cardSize;
         this.ctx.persist({ board_card_size: this.cardSize });
+        this.layoutGroups();
+      });
+    }
+
+    unmount() {
+      window.removeEventListener("resize", this.onResize);
+      super.unmount();
+    }
+
+    scheduleLayout() {
+      cancelAnimationFrame(this.layoutHandle);
+      this.layoutHandle = requestAnimationFrame(() => this.layoutGroups());
+    }
+
+    /**
+     * Size every group block on the shared grid.
+     *
+     * Flexbox could not do this: a flex line is as tall as its tallest item, so
+     * a short group could never sit beside or underneath a taller neighbour.
+     * A grid places each group wherever it fits, but only once the group
+     * declares how many columns and rows it occupies — and the row count
+     * depends on rendered height, which is why it is measured here rather than
+     * expressed in CSS.
+     */
+    layoutGroups() {
+      const host = this.columnsHost;
+      if (!host || host.dataset.mode !== "groups") return;
+
+      const hostStyle = window.getComputedStyle(host);
+      const columnGap = parseFloat(hostStyle.columnGap) || 0;
+      const rowGap = parseFloat(hostStyle.rowGap) || 0;
+      const cardWidth =
+        parseFloat(window.getComputedStyle(this.board).getPropertyValue("--card-w")) || 260;
+
+      // How many card-width tracks actually fit right now. A group never spans
+      // more than this, so a wide group folds onto more rows instead of
+      // overflowing to the right.
+      const available = Math.max(
+        1, Math.floor((host.clientWidth + columnGap) / (cardWidth + columnGap)));
+
+      host.querySelectorAll(".board-group").forEach((group) => {
+        const count = Number(group.dataset.count) || 0;
+        const side = Math.max(1, Math.ceil(Math.sqrt(count)));
+        const span = Math.min(side, available);
+
+        if (count) {
+          // repeat() will not take its count from a custom property, so the
+          // template is written out here with a literal.
+          group.querySelector(".group-cards").style.gridTemplateColumns =
+            `repeat(${span}, minmax(0, var(--card-w, 260px)))`;
+        }
+
+        group.style.gridColumn = `span ${span}`;
+        // Cleared before measuring, or the previous span would be measured.
+        group.style.gridRow = "";
+        const height = group.getBoundingClientRect().height;
+        const rows = Math.max(1, Math.ceil((height + rowGap) / (ROW_UNIT_PX + rowGap)));
+        group.style.gridRow = `span ${rows}`;
       });
     }
 
@@ -121,6 +190,8 @@
         : this.store.recurrence.map((rule) => rule.key);
 
       const buckets = new Map(values.map((value) => [value, []]));
+      // store.tasks already arrives pinned-first, so pushing in order keeps
+      // pinned cards at the front of whichever group they land in.
       const spillover = new Map();
       const unset = [];
 
@@ -150,17 +221,23 @@
       if (unset.length) {
         columns.push({ key: EMPTY_BUCKET, label: "Unset", color: null, tasks: unset });
       }
-      return columns;
+
+      // Empty groups sink to the end, keeping their relative order. They are
+      // still rendered: an empty group is the drop target for moving the first
+      // card into it.
+      return columns
+        .filter((column) => column.tasks.length)
+        .concat(columns.filter((column) => !column.tasks.length));
     }
 
     statusSelect(task) {
       const options = ['<option value="">—</option>'].concat(
-        this.store.valuesFor("status").map((value) =>
-          `<option value="${escapeHtml(value)}"${value === task.status ? " selected" : ""}
-           >${escapeHtml(value)}</option>`));
-      const color = this.store.colorFor("status", task.status);
-      const style = color ? ` style="color:${color};border-color:${color}"` : "";
-      return `<select class="card-status" data-role="status" data-id="${task.id}"${style}
+        this.store.valuesFor("status").map((value) => {
+          const color = this.store.colorFor("status", value);
+          return `<option value="${escapeHtml(value)}"${value === task.status ? " selected" : ""}
+                          ${color ? `data-color="${color}"` : ""}>${escapeHtml(value)}</option>`;
+        }));
+      return `<select class="card-status" data-role="status" data-id="${task.id}"
               >${options.join("")}</select>`;
     }
 
@@ -177,8 +254,12 @@
                  data-tooltip-always>${blockers}\u00a0blocked</span>`
         : "";
 
+      const accent = task.highlighted && this.store.highlightColor()
+        ? ` style="--status-accent:${this.store.highlightColor()}"`
+        : "";
       return `
-        <article class="card" draggable="${this.canDrag()}" data-id="${task.id}">
+        <article class="card${task.highlighted ? " is-pinned" : ""}"
+                 draggable="${this.canDrag()}" data-id="${task.id}"${accent}>
           <header class="card-head">
             <span class="card-id">${task.id}</span>
             ${badge}
@@ -196,6 +277,30 @@
       return this.groupBy !== UNGROUPED;
     }
 
+    /**
+     * Create a task that already belongs to this group.
+     *
+     * The API assigns the id, so the new task is found by diffing the snapshot
+     * against the ids held before the call.
+     */
+    async addToGroup(key) {
+      const before = new Set(this.store.tasks.map((task) => task.id));
+      try {
+        const snapshot = await this.ctx.api.createTask();
+        const created = snapshot.tasks.find((task) => !before.has(task.id));
+        const value = key === EMPTY_BUCKET ? "" : key;
+
+        if (created && this.groupBy !== UNGROUPED && value) {
+          // commit() applies the snapshot it gets back.
+          this.ctx.commit(created.id, { [this.groupBy]: value });
+        } else {
+          this.store.apply(snapshot);
+        }
+      } catch (error) {
+        this.ctx.toast.show(error.message, true);
+      }
+    }
+
     render() {
       if (!this.columnsHost) return;
       if (this.ctx.tooltip) this.ctx.tooltip.hide();
@@ -203,19 +308,33 @@
       const tasks = this.visibleTasks();
       const columns = this.buildColumns(tasks);
 
-      this.columnsHost.dataset.mode = this.groupBy === UNGROUPED ? "grid" : "columns";
-      this.columnsHost.innerHTML = columns.map((column) => `
-        <section class="board-column" data-key="${escapeHtml(column.key)}">
+      const grouped = this.groupBy !== UNGROUPED;
+      this.columnsHost.dataset.mode = grouped ? "groups" : "flat";
+
+      this.columnsHost.innerHTML = columns.map((column) => {
+        // Square-ish block: side length is the ceiling of the square root, so
+        // 3 cards lay out 2x2, 5 lay out 3x3, 10 lay out 4x4. Any short final
+        // row stays left-aligned, leaving the gaps on the right.
+        // Column and row spans are applied by layoutGroups() once the block has
+        // been measured; the markup only carries the card count it needs.
+        return `
+        <section class="board-group" data-key="${escapeHtml(column.key)}"
+                 data-count="${column.tasks.length}">
           <header class="column-head">
             <span class="column-dot" style="background:${column.color || "var(--text-faint)"}"></span>
             <span class="column-title">${escapeHtml(column.label)}</span>
             <span class="column-count">${column.tasks.length}</span>
           </header>
-          <div class="column-body" data-role="drop" data-key="${escapeHtml(column.key)}">
+          <div class="group-cards${column.tasks.length ? "" : " is-empty"}"
+               data-role="drop" data-key="${escapeHtml(column.key)}">
             ${column.tasks.map((task) => this.cardHtml(task)).join("")
-              || '<p class="column-empty">Empty</p>'}
+              || `<button class="column-add" type="button" data-role="add-here"
+                          data-key="${escapeHtml(column.key)}">
+                    <span class="plus">+</span>Add
+                  </button>`}
           </div>
-        </section>`).join("");
+        </section>`;
+      }).join("");
 
       this.emptyState.hidden = tasks.length > 0;
       this.hint.textContent = this.canDrag()
@@ -223,16 +342,25 @@
         : "";
 
       this.bindCards();
+      Dropdown.enhanceAll(this.columnsHost);
+      this.layoutGroups();
     }
 
     bindCards() {
       this.columnsHost.querySelectorAll('[data-role="status"]').forEach((select) => {
-        select.addEventListener("change", () =>
-          this.ctx.commit(Number(select.dataset.id), { status: select.value }));
+        const id = Number(select.dataset.id);
+        // Wheel stepping lives in the dropdown component and arrives here as a
+        // normal change event. The write is deferred, so the card does not jump
+        // between groups mid-scroll.
+        select.addEventListener("change", () => this.ctx.commitDelayed(id, { status: select.value }));
       });
 
       this.columnsHost.querySelectorAll('[data-role="jump"]').forEach((button) => {
         button.addEventListener("click", () => this.ctx.focusTask(Number(button.dataset.id)));
+      });
+
+      this.columnsHost.querySelectorAll('[data-role="add-here"]').forEach((button) => {
+        button.addEventListener("click", () => this.addToGroup(button.dataset.key));
       });
 
       if (!this.canDrag()) return;
@@ -248,7 +376,7 @@
         card.addEventListener("dragend", () => {
           this.dragging = null;
           card.classList.remove("dragging");
-          this.columnsHost.querySelectorAll(".column-body")
+          this.columnsHost.querySelectorAll(".group-cards")
             .forEach((body) => body.classList.remove("drop-target"));
         });
       });

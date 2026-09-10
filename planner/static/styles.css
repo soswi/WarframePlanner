@@ -142,7 +142,13 @@ html, body {
 .btn:hover:not(:disabled) { background: var(--surface-3); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
-.btn.primary:hover { filter: brightness(1.12); }
+
+/* Set explicitly rather than with filter: the generic .btn hover rule swaps in
+   a dark surface background first, so brightening it read as a dim-out. */
+.btn.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 82%, white);
+  border-color: color-mix(in srgb, var(--accent) 82%, white);
+}
 .btn.danger { color: var(--danger); }
 .btn.danger:hover:not(:disabled) { background: var(--surface-3); }
 
@@ -387,6 +393,13 @@ tbody td { padding: 6px 8px; vertical-align: top; }
   gap: 18px;
 }
 
+/* Grid and flex items default to min-width: auto, which refuses to shrink
+   below the intrinsic width of their contents — that is what pushed a row over
+   its neighbour. Zeroing it lets the column bound the row instead. */
+.def-group { min-width: 0; }
+.def-row { min-width: 0; }
+.def-row input[type="text"] { min-width: 0; }
+
 .def-group h3 {
   margin: 0 0 10px;
   font-size: 11px;
@@ -408,15 +421,49 @@ tbody td { padding: 6px 8px; vertical-align: top; }
   font-size: 13px;
 }
 
-.def-row input[type="color"] {
-  width: 30px;
-  height: 30px;
-  padding: 0;
+.color-field {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 0;
   border: 1px solid var(--border);
   border-radius: 6px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.color-field:focus-within { border-color: var(--accent); }
+
+/* The native swatch is stripped back to a plain colour chip; its own chrome
+   does not follow the theme, so none of it is left showing. */
+.color-field input[type="color"] {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
   background: none;
   cursor: pointer;
+  flex: none;
 }
+
+.color-field input[type="color"]::-webkit-color-swatch-wrapper { padding: 3px; }
+.color-field input[type="color"]::-webkit-color-swatch { border: none; border-radius: 4px; }
+.color-field input[type="color"]::-moz-color-swatch { border: none; border-radius: 4px; }
+
+.color-field .hex {
+  width: 68px;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 6px 6px 6px 2px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: lowercase;
+}
+
+.color-field .hex:focus { outline: none; color: var(--text); }
+.color-field .hex.invalid { color: var(--danger); }
 
 .def-row button {
   background: none;
@@ -428,13 +475,17 @@ tbody td { padding: 6px 8px; vertical-align: top; }
 
 .def-row button:hover { color: var(--danger); }
 
+/* Matches the 2px padding a .def-row carries, so its edges line up with the
+   rows rather than sitting proud of them. */
 .add-def {
+  display: block;
   background: none;
   border: 1px dashed var(--border);
   color: var(--text-dim);
   border-radius: 6px;
   padding: 6px;
-  width: 100%;
+  width: calc(100% - 4px);
+  margin: 2px 2px 0;
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
@@ -489,7 +540,53 @@ tbody td { padding: 6px 8px; vertical-align: top; }
 
 .toast.error { border-color: var(--danger); color: var(--danger); }
 
-input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+/* Checkbox, after a pattern by adamgiebl on Uiverse. The inner square scales
+   in on check and previews at low opacity on hover. */
+input[type="checkbox"] {
+  appearance: none;
+  width: 17px;
+  height: 17px;
+  border: 2px solid var(--accent);
+  border-radius: 5px;
+  background-color: transparent;
+  display: inline-block;
+  position: relative;
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity 0.3s ease-in-out;
+}
+
+input[type="checkbox"]::before {
+  content: "";
+  background-color: var(--accent);
+  display: block;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  transition: all 0.2s ease-in-out;
+}
+
+input[type="checkbox"]:checked::before { transform: translate(-50%, -50%) scale(1); }
+
+input[type="checkbox"]:hover::before {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 0.4;
+}
+
+input[type="checkbox"]:hover:checked::before {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+}
+
+input[type="checkbox"]:hover:checked {
+  opacity: 0.5;
+  transition-delay: 0.2s;
+  transition: opacity 0.3s ease-in-out;
+}
 
 ::-webkit-scrollbar { width: 11px; height: 11px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
@@ -615,41 +712,52 @@ input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
   padding-bottom: 8px;
 }
 
-.board-columns[data-mode="columns"] {
+/* One shared container. Groups are grid items spanning a measured number of
+   card-width columns and 8px rows; spans are assigned by layoutGroups().
+   Sparse `row` flow, deliberately not `dense`: the placement cursor only moves
+   forward, so group order is preserved exactly, while each group still takes
+   the first free slot ahead of it — to the right when the row has room, and
+   only then further down. `dense` would backfill earlier holes and let a later
+   group jump in front of an earlier one. */
+.board-columns {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--col-min, 275px), 1fr));
-  align-items: start;
+  grid-template-columns: repeat(auto-fill, var(--card-w, 260px));
+  grid-auto-rows: 8px;
+  grid-auto-flow: row;
+  justify-content: start;
   gap: var(--col-gap, 14px);
 }
 
-.board-columns[data-mode="grid"] .column-head { display: none; }
+.board-columns[data-mode="flat"] { display: block; }
 
-.board-columns[data-mode="grid"] .column-body {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--col-min, 275px), 1fr));
-  gap: var(--col-gap, 14px);
-  max-height: none;
-}
-
-.board-column {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
+.board-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  /* The block is only as tall as its contents; the row span reserves the
+     space, so nothing may stretch to fill it. */
+  align-self: start;
 }
 
 .column-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  background: var(--head-bg);
+  padding: 0 2px 7px;
   border-bottom: 1px solid var(--border);
+  /* Without this the header keeps its natural width and pushes the count past
+     the group's right edge instead of letting the title truncate. */
+  min-width: 0;
+  max-width: 100%;
 }
 
 .column-dot { width: 8px; height: 8px; border-radius: 99px; flex: none; }
 
 .column-title {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.07em;
@@ -661,7 +769,7 @@ input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
 }
 
 .column-count {
-  margin-left: auto;
+  flex: none;
   font-family: var(--mono);
   font-size: 11px;
   color: var(--text-faint);
@@ -670,29 +778,52 @@ input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
   padding: 1px 7px;
 }
 
-.column-body {
-  display: flex;
-  flex-direction: column;
+/* The column template is written inline per group by board.js, because the
+   repetition count in repeat() cannot come from a custom property. Everything
+   else lives here. No max-height and no overflow: every card in a group is
+   meant to stay visible. */
+.group-cards {
+  display: grid;
+  justify-content: start;
   gap: var(--card-gap, 9px);
-  padding: var(--card-gap, 9px);
-  min-height: 66px;
-  max-height: 54vh;
-  overflow-y: auto;
+  /* Roomy enough that a pinned card's ring stays inside the group box and is
+     therefore included in the height layoutGroups() measures. */
+  padding: 8px;
+  border-radius: var(--radius);
   transition: background 0.15s ease;
 }
 
-.column-body.drop-target {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  outline: 1px dashed var(--accent);
-  outline-offset: -6px;
+/* An empty group keeps exactly one card's width, so the header stays readable
+   and the block still reads as a drop target. */
+.group-cards.is-empty {
+  display: block;
+  width: var(--card-w, 260px);
 }
 
+/* Ungrouped: no square, just fill the row. */
+.board-columns[data-mode="flat"] .column-head { display: none; }
+
+.board-columns[data-mode="flat"] .group-cards {
+  grid-template-columns: repeat(auto-fill, minmax(var(--col-min, 275px), 1fr));
+  justify-content: stretch;
+}
+
+.group-cards.drop-target {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  outline: 1px dashed var(--accent);
+  outline-offset: -3px;
+}
+
+/* An empty group still needs a body: it is the drop target that lets you move
+   the first card into it. */
 .column-empty {
   margin: 0;
-  padding: 10px 2px;
+  padding: 14px;
   font-size: 12px;
   color: var(--text-faint);
   text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
 }
 
 .card {
@@ -767,30 +898,33 @@ input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
 .board[data-size="compact"] .card-desc.empty-desc { display: none; }
 
 .board[data-size="compact"] {
+  --card-w: 215px;
   --card-desc-lines: 1;
   --card-pad: 7px 9px;
   --card-title-size: 12.5px;
-  --card-gap: 6px;
+  --card-gap: 12px;
   --card-radius: 7px;
   --col-min: 220px;
   --col-gap: 10px;
 }
 
 .board[data-size="comfortable"] {
+  --card-w: 260px;
   --card-desc-lines: 3;
   --card-pad: 10px 11px;
   --card-title-size: 13.5px;
-  --card-gap: 9px;
+  --card-gap: 14px;
   --card-radius: 9px;
   --col-min: 275px;
   --col-gap: 14px;
 }
 
 .board[data-size="roomy"] {
+  --card-w: 320px;
   --card-desc-lines: 9;
   --card-pad: 15px 16px;
   --card-title-size: 15px;
-  --card-gap: 13px;
+  --card-gap: 18px;
   --card-radius: 11px;
   --col-min: 340px;
   --col-gap: 18px;
@@ -834,8 +968,7 @@ tbody tr.flash { animation: row-flash 1.6s ease-out; }
   padding: 10px 14px;
 }
 
-.board-column { transition: border-color 0.15s ease; }
-.board-column:hover { border-color: color-mix(in srgb, var(--border) 60%, var(--text-faint)); }
+
 
 /* ------------------------------------------------------------- tab strip ---
    Browser-style tabs joined to the content below: the active tab shares the
@@ -969,3 +1102,319 @@ tbody tr.flash { animation: row-flash 1.6s ease-out; }
 }
 
 .curtain-note { color: var(--text-faint) !important; font-size: 12px !important; }
+
+/* -------------------------------------------- reorderable definition rows ---
+   The grip is the only draggable part, so text and colour inputs keep their
+   normal selection behaviour. */
+.def-grip {
+  display: flex;
+  align-items: center;
+  flex: none;
+  width: 16px;
+  height: 26px;
+  cursor: grab;
+  color: var(--text-faint);
+  opacity: 0.55;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.def-row:hover .def-grip { opacity: 1; color: var(--text-dim); }
+.def-grip:active { cursor: grabbing; }
+
+.def-grip svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.def-row {
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 2px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.def-row.dragging {
+  opacity: 0.5;
+  background: var(--surface-2);
+  border-color: var(--accent);
+}
+
+.def-list { min-height: 8px; }
+
+.def-hint {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--text-faint);
+  opacity: 0.7;
+}
+
+/* ------------------------------------------------------- pinned status ---
+   Marks whichever status the user nominated as "pinned" (Active by default).
+   The accent is that status's own colour, passed in per element as
+   --status-accent, because it is user data rather than a theme token.
+
+   The ring is a box-shadow rather than an outline. `outline-offset` animates
+   by re-running outline painting each frame, which stutters; box-shadow spread
+   is composited and stays smooth. The first, background-coloured ring creates
+   the visible gap that outline-offset would have provided. */
+.card.is-pinned {
+  box-shadow:
+    0 0 0 3px var(--bg),
+    0 0 0 5px color-mix(in srgb, var(--status-accent) 75%, transparent);
+  transition: box-shadow 0.2s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+/* Reaches 6px on hover. Card gaps below are kept at 12px or more so two
+   adjacent pinned cards never touch, even when one is hovered. */
+.card.is-pinned:hover {
+  box-shadow:
+    0 0 0 4px var(--bg),
+    0 0 0 6px color-mix(in srgb, var(--status-accent) 75%, transparent);
+}
+
+/* Rows sit flush against one another, so a per-row ring would draw a stack of
+   touching frames. Instead a run of adjacent pinned rows is framed once: every
+   pinned row carries the side edges, and only the first and last of a run carry
+   the top and bottom, so the run reads as a single block. Run boundaries are
+   marked in layouts.js. The row background is left alone; the frame alone
+   carries the signal. */
+/* Each cell composes up to four edges. They live in custom properties because
+   separate rules would overwrite one another's box-shadow rather than add to
+   it, and a corner cell needs two edges at once. */
+tbody tr.is-pinned td {
+  box-shadow:
+    var(--edge-top, 0 0 transparent),
+    var(--edge-bottom, 0 0 transparent),
+    var(--edge-left, 0 0 transparent),
+    var(--edge-right, 0 0 transparent);
+}
+
+tbody tr.is-pinned td {
+  --pin-line: color-mix(in srgb, var(--status-accent) 75%, transparent);
+}
+
+tbody tr.is-pinned td:first-child { --edge-left: inset 1.5px 0 0 0 var(--pin-line); }
+tbody tr.is-pinned td:last-child { --edge-right: inset -1.5px 0 0 0 var(--pin-line); }
+tbody tr.is-pinned-first td { --edge-top: inset 0 1.5px 0 0 var(--pin-line); }
+tbody tr.is-pinned-last td { --edge-bottom: inset 0 -1.5px 0 0 var(--pin-line); }
+
+/* Inset shadows follow the element's border-radius, so rounding the corner
+   cells rounds the frame even though the table uses collapsed borders. */
+tbody tr.is-pinned-first td:first-child { border-top-left-radius: 6px; }
+tbody tr.is-pinned-first td:last-child { border-top-right-radius: 6px; }
+tbody tr.is-pinned-last td:first-child { border-bottom-left-radius: 6px; }
+tbody tr.is-pinned-last td:last-child { border-bottom-right-radius: 6px; }
+
+tbody tr.is-pinned .task-id {
+  color: color-mix(in srgb, var(--status-accent) 70%, var(--text-dim));
+}
+
+/* --------------------------------------------------------- priority dot ---
+   The cell shows a colour dot instead of a word. The real <select> is laid
+   over it at zero opacity, so clicking still opens the native list and
+   keyboard focus keeps working. */
+.dot-select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 26px;
+}
+
+.dot-select .dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 99px;
+  background: var(--dot-color, var(--text-faint));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-color, var(--text-faint)) 18%, transparent);
+  transition: box-shadow 0.15s ease;
+}
+
+.dot-select:hover .dot {
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--dot-color, var(--text-faint)) 26%, transparent);
+}
+
+.dot-select .dot.is-unset {
+  background: none;
+  border: 1.5px dashed var(--text-faint);
+  box-shadow: none;
+}
+
+.dot-select {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+}
+
+.dot-select:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+
+/* Own dropdown rather than a native <select>: an <option> cannot carry a
+   coloured dot next to text in a different colour. */
+.dot-menu,
+.dd-menu {
+  position: absolute;
+  z-index: 60;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+}
+
+.dot-menu button,
+.dd-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 9px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dot-menu button:hover,
+.dd-menu button:hover { background: var(--surface-3); }
+
+.dot-menu button[aria-selected="true"],
+.dd-menu button[aria-selected="true"] { background: var(--surface-3); font-weight: 600; }
+
+/* Slot-machine step: the marker rolls in from the direction of travel and is
+   clipped by the cell, so nothing spills into neighbouring rows. */
+@keyframes reel-down {
+  from { transform: translateY(-130%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes reel-up {
+  from { transform: translateY(130%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.reel-down { animation: reel-down 160ms cubic-bezier(0.22, 1, 0.36, 1); }
+.reel-up { animation: reel-up 160ms cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* The native control stays in the DOM as the value holder, but is never seen. */
+.dd-native {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The trigger inherits the classes of the select it replaced, so sizing rules
+   such as .cell-select or .picker still apply; only the internals differ. */
+.dd-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dd-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dd-caret {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-right: 1px;
+  border-right: 1.5px solid var(--text-faint);
+  border-bottom: 1.5px solid var(--text-faint);
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.dd-trigger:hover .dd-caret { border-color: var(--text-dim); }
+
+/* The label alone rolls; animating the trigger would drag the caret with it. */
+td .cell-select, .card-status { overflow: hidden; }
+
+/* Tooltip tinted with the value's own colour, set inline per cell. */
+.tooltip-bubble.tinted {
+  border-color: var(--tooltip-accent, var(--border));
+  border-left-color: var(--tooltip-accent, var(--accent));
+  color: var(--tooltip-accent, var(--text));
+}
+
+/* ------------------------------------------------- add into an empty group ---
+   Unobtrusive on purpose: an empty group is a hint, not a call to action. */
+.column-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px;
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.column-add:hover { border-color: var(--accent); color: var(--text-dim); }
+
+.column-add .plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid currentColor;
+  border-radius: 99px;
+  font-size: 13px;
+  line-height: 1;
+  flex: none;
+}
+
+/* Rows slide to their new place instead of jumping. Driven from layouts.js,
+   which measures before and after and plays the difference back. */
+tbody tr.reflowing { will-change: transform; }
+
+/* Enhanced selects inside the Definitions dialog. The trigger is a <button>,
+   so it does not inherit the `.settings-row select` rule that styled the
+   native control. Plain theme colours here: these are settings, not values, so
+   nothing should be tinted. */
+.settings-row .dd-trigger {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  min-width: 140px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  overflow: hidden;
+}
+
+.settings-row .dd-trigger:hover { border-color: var(--text-faint); }
+.settings-row .dd-trigger:focus-visible { outline: none; border-color: var(--accent); }
+
+/* The label of a setting never carries a value colour. */
+.settings-row .dd-label { color: var(--text) !important; font-weight: 400 !important; }

@@ -22,10 +22,17 @@ client = TestClient(create_app(service))
 
 state = client.get("/api/state").json()
 assert state["tasks"] == []
-assert [d["value"] for d in state["definitions"]["status"]] == ["Done", "In Progress", "Stuck"]
-assert [d["value"] for d in state["definitions"]["category"]] == [
-    "Void Fissure", "Credits", "Platinum", "Resources", "Build", "Standing",
-    "Preparation", "Event", "Clan", "Alliance", "Level Up", "Mastery Rank"]
+assert [d["value"] for d in state["definitions"]["status"]] == [
+    "Done", "In Progress", "Stuck", "Active"]
+category_colours = {d["value"]: d["color"] for d in state["definitions"]["category"]}
+assert category_colours["Credits"] == "#0f97ff"
+assert category_colours["Platinum"] == "#c7eeff"
+assert [d["value"] for d in state["definitions"]["category"]][-2:] == ["Kuva", "Grind"]
+assert len(state["definitions"]["category"]) == 14
+assert [d["value"] for d in state["definitions"]["priority"]] == [
+    "High", "Medium", "Low", "Very High"]
+assert [d["value"] for d in state["definitions"]["status"]] == [
+    "Done", "In Progress", "Stuck", "Active"]
 assert [r["key"] for r in state["recurrence"]] == ["One-off", "Daily", "Weekly"]
 assert [t["key"] for t in state["themes"]] == ["zariman", "orokin", "corpus",
                                               "grineer", "infested"]
@@ -106,16 +113,61 @@ print("10. Monday 01:00 UTC boundary is timezone independent: OK")
 payload = client.get("/api/export").json()
 assert payload["schema_version"] == 2 and len(payload["tasks"]) == 3
 files = {"file": ("dump.json", json.dumps(payload), "application/json")}
-merged = client.post("/api/import?merge=true", files=files).json()
-ids = sorted(t["id"] for t in merged["tasks"])
-assert len(ids) == 6 and len(set(ids)) == 6
-clone = next(t for t in merged["tasks"] if t["id"] > 1002 and t["dependencies"])
-assert all(d > 1002 for d in clone["dependencies"]), clone
-assert len(clone["dependencies"]) == 2
-print("11. merge import renumbers ids and rewrites every dependency: OK")
+merged = client.post("/api/import?merge=true",
+                     files={"file": ("dump.json", json.dumps(payload), "application/json")}).json()
+# The same file merged into itself must change nothing: every task matches by id.
+assert len(merged["tasks"]) == len(payload["tasks"]), merged["tasks"]
 
-r = client.post("/api/tasks/delete", json={"ids": [d for d in clone["dependencies"]]}).json()
-survivor = next(t for t in r["tasks"] if t["id"] == clone["id"])
+# An edited copy of an exported task must update the original, not clone it.
+edited = json.loads(json.dumps(payload))
+edited["tasks"][0]["activity"] = "Renamed by import"
+edited["tasks"][0]["priority"] = "Low"
+target_id = edited["tasks"][0]["id"]
+merged = client.post("/api/import?merge=true",
+                     files={"file": ("dump.json", json.dumps(edited), "application/json")}).json()
+assert len(merged["tasks"]) == len(payload["tasks"]), "matching ids must not add rows"
+updated = next(t for t in merged["tasks"] if t["id"] == target_id)
+assert updated["activity"] == "Renamed by import" and updated["priority"] == "Low"
+
+# Same name but a different id: still the same task, matched by name.
+renumbered = json.loads(json.dumps(payload))
+renumbered["tasks"][0]["id"] = 99001
+renumbered["tasks"][0]["activity"] = "Renamed by import"
+renumbered["tasks"][0]["dependencies"] = []
+renumbered["tasks"][0]["description"] = "matched by name"
+before = len(merged["tasks"])
+merged = client.post("/api/import?merge=true",
+                     files={"file": ("dump.json", json.dumps(renumbered), "application/json")}).json()
+assert len(merged["tasks"]) == before, "a name match must not add a row"
+assert not any(t["id"] == 99001 for t in merged["tasks"]), "the existing id is kept"
+assert next(t for t in merged["tasks"] if t["id"] == target_id)["description"] == "matched by name"
+
+# A matching id wins even when the name differs: it is the same task.
+before = len(merged["tasks"])
+collide = {"schema_version": payload["schema_version"], "tasks": [
+    {"id": target_id, "activity": "Renamed via id match", "dependencies": []}]}
+merged = client.post("/api/import?merge=true",
+                     files={"file": ("dump.json", json.dumps(collide), "application/json")}).json()
+assert len(merged["tasks"]) == before, "an id match updates, never adds"
+assert next(t for t in merged["tasks"] if t["id"] == target_id)["activity"] \
+    == "Renamed via id match"
+
+# Neither id nor name matches, so this one really is new.
+fresh = {"schema_version": payload["schema_version"], "tasks": [
+    {"id": 99042, "activity": "Brand new task", "dependencies": []}]}
+merged = client.post("/api/import?merge=true",
+                     files={"file": ("dump.json", json.dumps(fresh), "application/json")}).json()
+assert len(merged["tasks"]) == before + 1
+added = next(t for t in merged["tasks"] if t["activity"] == "Brand new task")
+client.post("/api/tasks/delete", json={"ids": [added["id"]]})
+print("11. merge updates by id then by name, and only adds what is new: OK")
+
+ids_now = sorted(t["id"] for t in client.get("/api/state").json()["tasks"])
+client.patch(f"/api/tasks/{ids_now[-1]}", json={"changes": {"dependencies": [ids_now[0]]}})
+dependent = next(t for t in client.get("/api/state").json()["tasks"]
+                 if t["id"] == ids_now[-1])
+r = client.post("/api/tasks/delete", json={"ids": dependent["dependencies"]}).json()
+survivor = next(t for t in r["tasks"] if t["id"] == dependent["id"])
 assert survivor["dependencies"] == [] and survivor["prereq_status"] == "Ready"
 print("12. deleting a task strips it from dependency lists: OK")
 
@@ -148,8 +200,8 @@ SqliteRepository(Path(legacy))  # rerunning the migration must be a no-op
 assert {t.id: t.dependencies for t in migrated.list_tasks()}[1001] == [1000]
 print("13. v1 database migrates to multi-dependency schema, idempotently: OK")
 
-def legacy_v2(categories):
-    """Build a v2 database carrying the given category definitions."""
+def legacy_v2(definitions):
+    """Build a v2 database carrying the given {kind: {value: colour}} palettes."""
     path = os.path.join(tempfile.mkdtemp(), "v2.db")
     conn = sqlite3.connect(path)
     conn.executescript("""
@@ -164,41 +216,67 @@ def legacy_v2(categories):
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     PRAGMA user_version = 2;
     """)
-    for pos, value in enumerate(categories):
-        conn.execute("INSERT INTO definitions (kind, value, position) VALUES ('category',?,?)",
-                     (value, pos))
+    for kind, palette in definitions.items():
+        for pos, (value, color) in enumerate(palette.items()):
+            conn.execute(
+                "INSERT INTO definitions (kind, value, color, position) VALUES (?,?,?,?)",
+                (kind, value, color, pos))
     conn.commit()
     conn.close()
     return Path(path)
 
-from planner.repository import LEGACY_CATEGORIES, V3_CATEGORIES
 
-def categories_after_migration(path):
-    return [d.value for d in SqliteRepository(path).list_definitions() if d.kind == "category"]
+def palette_after_migration(path, kind):
+    repo = SqliteRepository(path)
+    return {d.value: d.color for d in repo.list_definitions() if d.kind == kind}
 
-values = categories_after_migration(legacy_v2(sorted(LEGACY_CATEGORIES)))
-assert values[-2:] == ["Level Up", "Mastery Rank"] and len(values) == 12, values
 
-values = categories_after_migration(legacy_v2(sorted(V3_CATEGORIES)))
-assert values[-2:] == ["Level Up", "Mastery Rank"] and len(values) == 12, values
+from planner.config import DEFAULT_DEFINITIONS
+from planner.repository import STOCK_PALETTES
 
-values = categories_after_migration(legacy_v2(["My own", "Second one"]))
-assert values == ["My own", "Second one"], values
-print("13b. stock category lists are replaced, a customised one never is: OK")
+# Every palette ever shipped must be recognised and refreshed.
+for kind, shipped_sets in STOCK_PALETTES.items():
+    expected = dict(DEFAULT_DEFINITIONS[kind])
+    for shipped in shipped_sets:
+        got = palette_after_migration(legacy_v2({kind: shipped}), kind)
+        assert got == expected, (kind, got)
+
+# Same names, one recoloured entry: touched, so it must survive untouched.
+recoloured = dict(STOCK_PALETTES["status"][0])
+recoloured["Done"] = "#123456"
+got = palette_after_migration(legacy_v2({"status": recoloured}), "status")
+assert got == recoloured, got
+
+# A renamed entry is equally a customisation.
+custom = {"My own": "#ffffff", "Second one": "#000000"}
+got = palette_after_migration(legacy_v2({"category": custom}), "category")
+assert got == custom, got
+
+# Kinds are judged independently: a customised status must not freeze categories.
+mixed = legacy_v2({"status": recoloured, "category": STOCK_PALETTES["category"][0]})
+repo = SqliteRepository(mixed)
+by_kind = {}
+for d in repo.list_definitions():
+    by_kind.setdefault(d.kind, {})[d.value] = d.color
+assert by_kind["status"] == recoloured
+assert by_kind["category"] == dict(DEFAULT_DEFINITIONS["category"])
+
+print("13b. every shipped palette refreshes; any customised one is kept: OK")
 
 import subprocess, shutil
 if shutil.which("node"):
     harness = """
 const fs=require("fs"),vm=require("vm");
 const sb={window:{},document:{addEventListener(){}}};sb.globalThis=sb;vm.createContext(sb);
-for(const f of ["markdown.js","tooltip.js","themes.js","layouts.js","board.js","app.js"])
+for(const f of ["dropdown.js","markdown.js","tooltip.js","themes.js","layouts.js",
+                "board.js","app.js"])
   vm.runInContext(fs.readFileSync("planner/static/"+f,"utf8"),sb,{filename:f});
 if(!sb.window.PlannerThemes||!sb.window.PlannerLayouts||!sb.window.PlannerTooltip
-   ||!sb.window.PlannerMarkdown)
+   ||!sb.window.PlannerMarkdown||!sb.window.PlannerDropdown)
   throw new Error("missing namespace");
 """
     subprocess.run(["node", "-e", harness], check=True)
-    print("14. the six scripts coexist in one global scope: OK")
+    print("14. the seven scripts coexist in one global scope: OK")
 else:
     print("14. script-collision check skipped (node not installed)")
 
@@ -283,7 +361,8 @@ function el(){return {classList:{add(){},remove(){},toggle(){}},dataset:{},style
 const sb={window:{},document:{addEventListener(){},body:el(),createElement:(t)=>t==="canvas"
   ?{getContext:()=>({font:"",measureText:s=>({width:s.length*7})})}:el()}};
 sb.globalThis=sb;vm.createContext(sb);
-for(const f of ["markdown.js","tooltip.js","themes.js","layouts.js","board.js","app.js"])
+for(const f of ["dropdown.js","markdown.js","tooltip.js","themes.js","layouts.js",
+                "board.js","app.js"])
   vm.runInContext(fs.readFileSync("planner/static/"+f,"utf8"),sb,{filename:f});
 
 const L=sb.window.PlannerLayouts;
@@ -304,8 +383,8 @@ const b=new L.BoardLayout({store,markdown:new sb.window.PlannerMarkdown.Markdown
 const shape=()=>b.buildColumns(b.visibleTasks()).map(c=>c.label+":"+c.tasks.length).join(",");
 
 b.groupBy="status";
-if(shape()!=="Done:1,In Progress:0,Stuck:1,Unset:1")
-  throw new Error("status grouping keeps empty columns and an Unset bucket: "+shape());
+if(shape()!=="Done:1,Stuck:1,Unset:1,In Progress:0")
+  throw new Error("empty columns are kept but sorted last: "+shape());
 b.groupBy="category";
 if(shape()!=="Foundry:1,Ghost (undefined):1,Unset:1")
   throw new Error("orphaned value needs its own column: "+shape());
@@ -322,6 +401,7 @@ else:
 
 for path in ("/", "/static/app.js", "/static/layouts.js", "/static/themes.js",
              "/static/tooltip.js", "/static/markdown.js", "/static/board.js",
+             "/static/dropdown.js",
              "/static/styles.css"):
     assert client.get(path).status_code == 200, path
 print("19. frontend assets served: OK")
@@ -420,5 +500,31 @@ assert client.post("/api/shutdown").status_code == 400, \
 ping = client.get("/api/ping").json()
 assert ping["app"] == "warframe-planner" and isinstance(ping["pid"], int)
 print("23. quit control present, ping identifies the app, shutdown needs a hook: OK")
+
+# Reordering in the modal is DOM-only; the order is persisted by the ordinary
+# save, so the API must honour the sequence it is handed.
+reordered = [
+    {"value": "Very High", "color": "#ec4657"},
+    {"value": "High", "color": "#fda817"},
+    {"value": "Low", "color": "#9ac4fe"},
+    {"value": "Medium", "color": "#ffc370"},
+]
+snap = client.put("/api/definitions",
+                  json={"kind": "priority", "entries": reordered}).json()
+assert [d["value"] for d in snap["definitions"]["priority"]] == \
+    ["Very High", "High", "Low", "Medium"]
+assert [d["position"] for d in snap["definitions"]["priority"]] == [0, 1, 2, 3]
+# Order must survive a round trip, not just the response that wrote it.
+again = client.get("/api/state").json()["definitions"]["priority"]
+assert [d["value"] for d in again] == ["Very High", "High", "Low", "Medium"]
+client.put("/api/definitions", json={"kind": "priority", "entries": [
+    {"value": v, "color": c} for v, c in DEFAULT_DEFINITIONS["priority"]]})
+
+html = client.get("/").text
+assert "def-grip" not in html, "the grip is rendered by app.js, not baked into the page"
+grip_js = client.get("/static/app.js").text
+assert "def-grip" in grip_js and 'draggable="true"' in grip_js
+assert "rowAfterPointer" in grip_js and "bindReordering" in grip_js
+print("24. definition order is persisted and the drag handle is wired: OK")
 
 print("\nALL TESTS PASSED")

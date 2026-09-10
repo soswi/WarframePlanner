@@ -10,23 +10,40 @@ from typing import Any, Iterable, Optional
 from .config import DEFAULT_DEFINITIONS, DEFAULT_SETTINGS
 from .models import Definition, Task
 
-DB_SCHEMA_VERSION = 4
+DB_SCHEMA_VERSION = 7
 
-# The category set shipped before v3. Used to tell an untouched default list
-# apart from one the user has customised.
+# Every definition palette this app has ever shipped, keyed by kind. A stock
+# palette is replaced wholesale by a migration; anything else is left alone.
+#
+# The comparison is on value AND colour, not names alone. Several releases kept
+# the same names and changed only the colours, so a name-only check would
+# silently discard a palette the user had recoloured.
 LEGACY_CATEGORIES = {
-    "Void / Relics", "Void Fissure", "Void Resources", "Foundry",
-    "Duviri / Incarnon", "Sanctum Anatomica", "Weekly Archon", "Sanctuary / Leveling",
+    "Void / Relics": "#a78bfa", "Void Fissure": "#a78bfa",
+    "Void Resources": "#a78bfa", "Foundry": "#f472b6",
+    "Duviri / Incarnon": "#fb923c", "Sanctum Anatomica": "#22d3ee",
+    "Weekly Archon": "#facc15", "Sanctuary / Leveling": "#4ade80",
 }
 
-# The category set shipped by v3, before Level Up and Mastery Rank were added.
 V3_CATEGORIES = {
-    "Void Fissure", "Credits", "Platinum", "Resources", "Build",
-    "Standing", "Preparation", "Event", "Clan", "Alliance",
+    "Void Fissure": "#a78bfa", "Credits": "#facc15", "Platinum": "#38bdf8",
+    "Resources": "#4ade80", "Build": "#fb923c", "Standing": "#22d3ee",
+    "Preparation": "#94a3b8", "Event": "#f472b6", "Clan": "#c084fc",
+    "Alliance": "#f87171",
 }
 
-# Any stock list a migration is allowed to replace wholesale.
-REPLACEABLE_CATEGORY_SETS = (LEGACY_CATEGORIES, V3_CATEGORIES)
+V4_CATEGORIES = dict(V3_CATEGORIES, **{"Level Up": "#84cc16", "Mastery Rank": "#e879f9"})
+
+V5_CATEGORIES = dict(V4_CATEGORIES, **{"Credits": "#38bdf8", "Platinum": "#7dd3fc"})
+
+STOCK_PALETTES: dict[str, tuple[dict[str, str], ...]] = {
+    "category": (LEGACY_CATEGORIES, V3_CATEGORIES, V4_CATEGORIES, V5_CATEGORIES),
+    "priority": ({"High": "#f59e0b", "Medium": "#0ea5e9", "Low": "#94a3b8"},),
+    "status": (
+        {"Done": "#10b981", "In Progress": "#3b82f6", "Stuck": "#ef4444"},
+        {"Done": "#39fe74", "In Progress": "#4d91fe", "Stuck": "#ec4657"},
+    ),
+}
 
 
 class Repository(ABC):
@@ -135,21 +152,23 @@ class SqliteRepository(Repository):
                     # ignored by _row_to_task, so leaving it in place is harmless.
                     pass
 
-            # v2 -> v3 -> v4: the shipped category list changed twice. Replace it
-            # only when it still matches a stock list exactly, so a customised
-            # set is never overwritten.
+            # Refresh any definition palette the user has left untouched. Each
+            # kind is checked independently, so customising one does not freeze
+            # the others.
             if current and current < DB_SCHEMA_VERSION:
-                rows = self._conn.execute(
-                    "SELECT value FROM definitions WHERE kind = 'category'"
-                ).fetchall()
-                present = {r["value"] for r in rows}
-                if any(present == stock for stock in REPLACEABLE_CATEGORY_SETS):
-                    self._conn.execute("DELETE FROM definitions WHERE kind = 'category'")
-                    for pos, (value, color) in enumerate(DEFAULT_DEFINITIONS["category"]):
+                for kind, stock in STOCK_PALETTES.items():
+                    rows = self._conn.execute(
+                        "SELECT value, color FROM definitions WHERE kind = ?", (kind,)
+                    ).fetchall()
+                    present = {r["value"]: r["color"] for r in rows}
+                    if not any(present == shipped for shipped in stock):
+                        continue
+                    self._conn.execute("DELETE FROM definitions WHERE kind = ?", (kind,))
+                    for pos, (value, color) in enumerate(DEFAULT_DEFINITIONS[kind]):
                         self._conn.execute(
                             "INSERT INTO definitions (kind, value, color, position) "
                             "VALUES (?,?,?,?)",
-                            ("category", value, color, pos),
+                            (kind, value, color, pos),
                         )
 
             if current != DB_SCHEMA_VERSION:
