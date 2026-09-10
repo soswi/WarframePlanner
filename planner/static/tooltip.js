@@ -79,8 +79,9 @@
 
       this.target = host;
       const format = host.dataset.tooltipFormat;
+      const tint = host.dataset.tooltipTint;
       clearTimeout(this.timer);
-      this.timer = setTimeout(() => this.show(text, format), SHOW_DELAY_MS);
+      this.timer = setTimeout(() => this.show(text, format, tint), SHOW_DELAY_MS);
     }
 
     onMouseOut(event) {
@@ -149,7 +150,9 @@
       return total;
     }
 
-    show(text, format) {
+    show(text, format, tint) {
+      this.element.classList.toggle("tinted", Boolean(tint));
+      this.element.style.setProperty("--tooltip-accent", tint || "");
       const formatter = format && this.formatters[format];
       if (formatter) {
         this.element.innerHTML = formatter(text);

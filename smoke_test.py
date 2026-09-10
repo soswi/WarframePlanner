@@ -22,7 +22,8 @@ client = TestClient(create_app(service))
 
 state = client.get("/api/state").json()
 assert state["tasks"] == []
-assert [d["value"] for d in state["definitions"]["status"]] == ["Done", "In Progress", "Stuck"]
+assert [d["value"] for d in state["definitions"]["status"]] == [
+    "Done", "In Progress", "Stuck", "Active"]
 category_colours = {d["value"]: d["color"] for d in state["definitions"]["category"]}
 assert category_colours["Credits"] == "#0f97ff"
 assert category_colours["Platinum"] == "#c7eeff"
@@ -30,7 +31,8 @@ assert [d["value"] for d in state["definitions"]["category"]][-2:] == ["Kuva", "
 assert len(state["definitions"]["category"]) == 14
 assert [d["value"] for d in state["definitions"]["priority"]] == [
     "High", "Medium", "Low", "Very High"]
-assert [d["value"] for d in state["definitions"]["status"]] == ["Done", "In Progress", "Stuck"]
+assert [d["value"] for d in state["definitions"]["status"]] == [
+    "Done", "In Progress", "Stuck", "Active"]
 assert [r["key"] for r in state["recurrence"]] == ["One-off", "Daily", "Weekly"]
 assert [t["key"] for t in state["themes"]] == ["zariman", "orokin", "corpus",
                                               "grineer", "infested"]
@@ -266,14 +268,15 @@ if shutil.which("node"):
     harness = """
 const fs=require("fs"),vm=require("vm");
 const sb={window:{},document:{addEventListener(){}}};sb.globalThis=sb;vm.createContext(sb);
-for(const f of ["markdown.js","tooltip.js","themes.js","layouts.js","board.js","app.js"])
+for(const f of ["dropdown.js","markdown.js","tooltip.js","themes.js","layouts.js",
+                "board.js","app.js"])
   vm.runInContext(fs.readFileSync("planner/static/"+f,"utf8"),sb,{filename:f});
 if(!sb.window.PlannerThemes||!sb.window.PlannerLayouts||!sb.window.PlannerTooltip
-   ||!sb.window.PlannerMarkdown)
+   ||!sb.window.PlannerMarkdown||!sb.window.PlannerDropdown)
   throw new Error("missing namespace");
 """
     subprocess.run(["node", "-e", harness], check=True)
-    print("14. the six scripts coexist in one global scope: OK")
+    print("14. the seven scripts coexist in one global scope: OK")
 else:
     print("14. script-collision check skipped (node not installed)")
 
@@ -358,7 +361,8 @@ function el(){return {classList:{add(){},remove(){},toggle(){}},dataset:{},style
 const sb={window:{},document:{addEventListener(){},body:el(),createElement:(t)=>t==="canvas"
   ?{getContext:()=>({font:"",measureText:s=>({width:s.length*7})})}:el()}};
 sb.globalThis=sb;vm.createContext(sb);
-for(const f of ["markdown.js","tooltip.js","themes.js","layouts.js","board.js","app.js"])
+for(const f of ["dropdown.js","markdown.js","tooltip.js","themes.js","layouts.js",
+                "board.js","app.js"])
   vm.runInContext(fs.readFileSync("planner/static/"+f,"utf8"),sb,{filename:f});
 
 const L=sb.window.PlannerLayouts;
@@ -379,8 +383,8 @@ const b=new L.BoardLayout({store,markdown:new sb.window.PlannerMarkdown.Markdown
 const shape=()=>b.buildColumns(b.visibleTasks()).map(c=>c.label+":"+c.tasks.length).join(",");
 
 b.groupBy="status";
-if(shape()!=="Done:1,In Progress:0,Stuck:1,Unset:1")
-  throw new Error("status grouping keeps empty columns and an Unset bucket: "+shape());
+if(shape()!=="Done:1,Stuck:1,Unset:1,In Progress:0")
+  throw new Error("empty columns are kept but sorted last: "+shape());
 b.groupBy="category";
 if(shape()!=="Foundry:1,Ghost (undefined):1,Unset:1")
   throw new Error("orphaned value needs its own column: "+shape());
@@ -397,6 +401,7 @@ else:
 
 for path in ("/", "/static/app.js", "/static/layouts.js", "/static/themes.js",
              "/static/tooltip.js", "/static/markdown.js", "/static/board.js",
+             "/static/dropdown.js",
              "/static/styles.css"):
     assert client.get(path).status_code == 200, path
 print("19. frontend assets served: OK")

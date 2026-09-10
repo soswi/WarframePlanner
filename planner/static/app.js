@@ -4,6 +4,11 @@ const { ThemeRegistry, BUILTIN_THEMES } = window.PlannerThemes;
 const { TableLayout, BoardLayout, LayoutRegistry, SelectionModel, escapeHtml } =
   window.PlannerLayouts;
 const { TooltipController } = window.PlannerTooltip;
+const { Dropdown } = window.PlannerDropdown;
+
+// How long a status or priority edit waits before it is written and the list
+// reorders around it.
+const DEFERRED_COMMIT_DELAY_MS = 1000;
 const { MarkdownRenderer } = window.PlannerMarkdown;
 
 /** Thin fetch wrapper. Every mutating call returns the full snapshot. */
@@ -166,6 +171,7 @@ class DefinitionsModal {
          </label>`;
 
     this.backdrop.hidden = false;
+    Dropdown.enhanceAll(this.backdrop);
   }
 
   rowHtml(value, color) {
@@ -179,7 +185,11 @@ class DefinitionsModal {
           <circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/>
         </svg>
       </span>
-      <input type="color" value="${color}">
+      <span class="color-field">
+        <input type="color" value="${color}">
+        <input type="text" class="hex" value="${escapeHtml(color)}" spellcheck="false"
+               maxlength="7" aria-label="Hex colour">
+      </span>
       <input type="text" value="${escapeHtml(value)}" placeholder="value">
       <button type="button" class="def-remove" title="Remove">&times;</button>
     </div>`;
@@ -188,6 +198,33 @@ class DefinitionsModal {
   bindRemovals(group) {
     group.querySelectorAll(".def-remove").forEach((button) => {
       button.onclick = () => button.closest(".def-row").remove();
+    });
+    this.bindColorFields(group);
+  }
+
+  /** Keep the swatch and the typed hex in step, in both directions. */
+  bindColorFields(group) {
+    group.querySelectorAll(".color-field").forEach((field) => {
+      const swatch = field.querySelector('input[type="color"]');
+      const hex = field.querySelector(".hex");
+
+      swatch.oninput = () => {
+        hex.value = swatch.value;
+        hex.classList.remove("invalid");
+      };
+
+      hex.oninput = () => {
+        const value = hex.value.trim();
+        const valid = /^#[0-9a-fA-F]{6}$/.test(value);
+        hex.classList.toggle("invalid", Boolean(value) && !valid);
+        if (valid) swatch.value = value;
+      };
+
+      // Anything unparseable falls back to the swatch rather than being saved.
+      hex.onblur = () => {
+        if (!/^#[0-9a-fA-F]{6}$/.test(hex.value.trim())) hex.value = swatch.value;
+        hex.classList.remove("invalid");
+      };
     });
   }
 
@@ -256,7 +293,7 @@ class DefinitionsModal {
         const group = this.body.querySelector(`.def-group[data-kind="${kind}"]`);
         const entries = Array.from(group.querySelectorAll(".def-row")).map((row) => ({
           value: row.querySelector('input[type="text"]').value.trim(),
-          color: row.querySelector('input[type="color"]').value,
+          color: row.querySelector(".hex").value.trim().toLowerCase(),
         })).filter((entry) => entry.value);
         snapshot = await this.api.saveDefinitions(kind, entries);
       }
@@ -294,6 +331,7 @@ class PlannerApp {
     this.tooltip = new TooltipController({
       formatters: { markdown: (text) => this.markdown.render(text) },
     }).attach();
+    this.pendingEdits = new Map();
     this.selection = new SelectionModel(() => this.refreshSelectionUi());
     this.layoutRoot = document.getElementById("layoutRoot");
     this.layout = null;
@@ -312,6 +350,7 @@ class PlannerApp {
       tooltip: this.tooltip,
       markdown: this.markdown,
       commit: (id, changes) => this.commit(id, changes),
+      commitDelayed: (id, changes) => this.commitDelayed(id, changes),
       persist: (settings) => this.persist(settings),
       focusTask: (id) => this.focusTask(id),
     };
@@ -400,6 +439,24 @@ class PlannerApp {
     }
   }
 
+  /**
+   * Hold an edit for a moment before sending it.
+   *
+   * Status and priority changes reorder the list, and reordering under the
+   * pointer the instant a value is picked is disorienting — especially when
+   * stepping through values with the wheel. The pause also collapses a burst
+   * of wheel steps into a single write. The cell repaints itself immediately,
+   * so only the reordering waits.
+   */
+  commitDelayed(id, changes) {
+    const key = `${id}:${Object.keys(changes).join(",")}`;
+    clearTimeout(this.pendingEdits.get(key));
+    this.pendingEdits.set(key, setTimeout(() => {
+      this.pendingEdits.delete(key);
+      this.commit(id, changes);
+    }, DEFERRED_COMMIT_DELAY_MS));
+  }
+
   async commit(id, changes) {
     try {
       this.store.apply(await this.api.updateTask(id, changes));
@@ -455,6 +512,7 @@ class PlannerApp {
     themePicker.innerHTML = this.themes.list().map((theme) =>
       `<option value="${theme.key}">${escapeHtml(theme.label)}</option>`).join("");
     themePicker.value = this.themes.activeKey || "zariman";
+    Dropdown.enhanceAll(document.querySelector(".toolbar"));
 
     this.renderTabs();
   }
