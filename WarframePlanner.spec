@@ -1,5 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
+import re
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_submodules
+
+# Read the version straight from the package rather than repeating it here, so
+# a release only ever needs planner/__init__.py bumped. Parsed with a regex
+# instead of imported, because importing would pull in the app's dependencies
+# during the build.
+VERSION = re.search(
+    r'__version__\s*=\s*"([^"]+)"',
+    Path("planner/__init__.py").read_text(encoding="utf-8"),
+).group(1)
 
 hiddenimports = collect_submodules("uvicorn") + [
     "anyio._backends._asyncio",
@@ -26,7 +38,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="WarframePlanner",
+    name=f"WarframePlanner-{VERSION}",
     debug=False,
     strip=False,
     upx=True,

@@ -369,17 +369,7 @@ class PlannerService:
         incoming = [Task.from_dict(raw) for raw in payload.get("tasks", [])]
 
         if merge:
-            existing = {t.id for t in self.repo.list_tasks()}
-            offset = self.next_id()
-            remap: dict[int, int] = {}
-            for task in incoming:
-                if task.id in existing:
-                    remap[task.id] = offset
-                    offset += 1
-            for task in incoming:
-                task.id = remap.get(task.id, task.id)
-                task.dependencies = [remap.get(d, d) for d in task.dependencies]
-                self.repo.upsert_task(task)
+            self._merge_tasks(incoming)
         else:
             self.repo.replace_tasks(incoming)
             for kind, entries in (payload.get("definitions") or {}).items():
@@ -394,3 +384,56 @@ class PlannerService:
 
         self._normalise_positions()
         return {"tasks": len(incoming)}
+
+    def _merge_tasks(self, incoming: list[Task]) -> None:
+        """Fold imported tasks into the existing set, updating rather than copying.
+
+        A task is treated as the same task when it carries the same id, or
+        failing that the same activity name. Only genuinely new tasks are
+        inserted, and only they can be renumbered. Each existing task can absorb
+        at most one incoming task, so a file containing two rows with the same
+        name adds the second instead of overwriting the first twice.
+        """
+        existing = self.repo.list_tasks()
+        by_id = {t.id: t for t in existing}
+        by_name: dict[str, Task] = {}
+        for task in existing:
+            key = task.activity.strip().lower()
+            if key:
+                by_name.setdefault(key, task)
+
+        taken = set(by_id)
+        next_free = max(taken | {int(self.repo.get_setting("min_task_id", "1000") or 1000) - 1}) + 1
+
+        claimed: set[int] = set()
+        remap: dict[int, int] = {}
+        plan: list[tuple[Task, int, Optional[int]]] = []
+
+        for task in incoming:
+            target = by_id.get(task.id)
+            if target is None:
+                key = task.activity.strip().lower()
+                target = by_name.get(key) if key else None
+            if target is not None and target.id in claimed:
+                target = None
+
+            if target is not None:
+                claimed.add(target.id)
+                remap[task.id] = target.id
+                # Keep the slot the task already occupies rather than reshuffling.
+                plan.append((task, target.id, target.position))
+            else:
+                new_id = task.id
+                if new_id in taken:
+                    new_id = next_free
+                    next_free += 1
+                taken.add(new_id)
+                remap[task.id] = new_id
+                plan.append((task, new_id, None))
+
+        for task, new_id, position in plan:
+            task.id = new_id
+            task.dependencies = [remap.get(d, d) for d in task.dependencies]
+            if position is not None:
+                task.position = position
+            self.repo.upsert_task(task)
