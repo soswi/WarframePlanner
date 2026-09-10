@@ -187,6 +187,8 @@
         : this.store.recurrence.map((rule) => rule.key);
 
       const buckets = new Map(values.map((value) => [value, []]));
+      // store.tasks already arrives pinned-first, so pushing in order keeps
+      // pinned cards at the front of whichever group they land in.
       const spillover = new Map();
       const unset = [];
 
@@ -249,8 +251,12 @@
                  data-tooltip-always>${blockers}\u00a0blocked</span>`
         : "";
 
+      const accent = task.highlighted && this.store.highlightColor()
+        ? ` style="--status-accent:${this.store.highlightColor()}"`
+        : "";
       return `
-        <article class="card" draggable="${this.canDrag()}" data-id="${task.id}">
+        <article class="card${task.highlighted ? " is-pinned" : ""}"
+                 draggable="${this.canDrag()}" data-id="${task.id}"${accent}>
           <header class="card-head">
             <span class="card-id">${task.id}</span>
             ${badge}

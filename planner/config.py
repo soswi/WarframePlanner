@@ -46,6 +46,7 @@ DEFAULT_DEFINITIONS = {
         ("Done", "#39fe74"),
         ("In Progress", "#4d91fe"),
         ("Stuck", "#ec4657"),
+        ("Active", "#1ce9db"),
     ],
     "priority": [
         ("High", "#fda817"),
@@ -78,6 +79,9 @@ DEFAULT_SETTINGS = {
     "theme": "zariman",
     "layout": "table",
     "enforce_dependency_gate": "true",
+    # Status pinned to the front of every list and given a colour accent.
+    # Empty disables the behaviour.
+    "highlight_status": "Active",
     "board_group_by": "status",
     "board_card_size": "comfortable",
 }
