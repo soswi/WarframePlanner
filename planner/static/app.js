@@ -74,6 +74,12 @@ class Store {
   }
 
   doneStatus() { return this.settings.done_status || "Done"; }
+
+  /** Status pinned to the front of every list, or "" when disabled. */
+  highlightStatus() { return (this.settings.highlight_status || "").trim(); }
+
+  /** Colour to accent a pinned task with, taken from the status definition. */
+  highlightColor() { return this.colorFor("status", this.highlightStatus()); }
 }
 
 class Toast {
@@ -138,9 +144,20 @@ class DefinitionsModal {
       </label>`;
 
     const gateOn = this.store.settings.enforce_dependency_gate !== "false";
+    const pinned = this.store.settings.highlight_status || "";
+    const pinnedSelect = `
+      <label>Pinned status
+        <select data-setting="highlight_status">
+          <option value=""${pinned ? "" : " selected"}>None</option>
+          ${statuses.map((value) =>
+            `<option${value === pinned ? " selected" : ""}>${escapeHtml(value)}</option>`).join("")}
+        </select>
+      </label>`;
+
     this.settingsRow.innerHTML =
       statusSelect("done_status", "Completion status")
       + statusSelect("reset_status", "Status after reset")
+      + pinnedSelect
       + `<label>Dependency gate
            <select data-setting="enforce_dependency_gate">
              <option value="true"${gateOn ? " selected" : ""}>Block completion</option>

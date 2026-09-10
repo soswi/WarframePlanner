@@ -44,6 +44,10 @@ class PlannerService:
     def done_status(self) -> str:
         return self.repo.get_setting("done_status", "Done") or "Done"
 
+    def highlight_status(self) -> str:
+        """Status pinned to the front of every list. Empty disables pinning."""
+        return (self.repo.get_setting("highlight_status", "") or "").strip()
+
     def gate_enabled(self) -> bool:
         return (self.repo.get_setting("enforce_dependency_gate", "true") or "true") == "true"
 
@@ -66,6 +70,7 @@ class PlannerService:
     def list_tasks(self) -> list[dict[str, Any]]:
         tasks = self.repo.list_tasks()
         index = {t.id: t for t in tasks}
+        highlight = self.highlight_status()
         out = []
         for task in tasks:
             payload = task.to_dict()
@@ -73,7 +78,12 @@ class PlannerService:
             payload["prereq_status"] = resolved["state"]
             payload["blocked_by"] = resolved["blocked_by"]
             payload["missing_dependencies"] = resolved["missing"]
+            payload["highlighted"] = bool(highlight) and task.status == highlight
             out.append(payload)
+
+        # Pinned tasks lead, everything else keeps its stored order. Sorting is
+        # stable, so this is a partition rather than a reshuffle.
+        out.sort(key=lambda payload: not payload["highlighted"])
         return out
 
     def definitions(self) -> dict[str, list[dict[str, Any]]]:

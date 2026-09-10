@@ -10,7 +10,7 @@ from typing import Any, Iterable, Optional
 from .config import DEFAULT_DEFINITIONS, DEFAULT_SETTINGS
 from .models import Definition, Task
 
-DB_SCHEMA_VERSION = 6
+DB_SCHEMA_VERSION = 7
 
 # Every definition palette this app has ever shipped, keyed by kind. A stock
 # palette is replaced wholesale by a migration; anything else is left alone.
@@ -39,7 +39,10 @@ V5_CATEGORIES = dict(V4_CATEGORIES, **{"Credits": "#38bdf8", "Platinum": "#7dd3f
 STOCK_PALETTES: dict[str, tuple[dict[str, str], ...]] = {
     "category": (LEGACY_CATEGORIES, V3_CATEGORIES, V4_CATEGORIES, V5_CATEGORIES),
     "priority": ({"High": "#f59e0b", "Medium": "#0ea5e9", "Low": "#94a3b8"},),
-    "status": ({"Done": "#10b981", "In Progress": "#3b82f6", "Stuck": "#ef4444"},),
+    "status": (
+        {"Done": "#10b981", "In Progress": "#3b82f6", "Stuck": "#ef4444"},
+        {"Done": "#39fe74", "In Progress": "#4d91fe", "Stuck": "#ec4657"},
+    ),
 }
 
 

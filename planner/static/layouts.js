@@ -189,6 +189,10 @@
           return String(left).localeCompare(String(right)) * this.sortDirection;
         });
       }
+
+      // Pinned tasks lead whatever the sort column is; the chosen sort still
+      // orders them among themselves, because the sort is stable.
+      rows.sort((a, b) => Number(b.highlighted) - Number(a.highlighted));
       return rows;
     }
 
@@ -285,13 +289,30 @@
       if (this.ctx.tooltip) this.ctx.tooltip.hide();
       const rows = this.visibleTasks();
 
-      this.tbody.innerHTML = rows.map((task) => `
-        <tr class="${this.selection.has(task.id) ? "selected" : ""}" data-id="${task.id}">
+      this.tbody.innerHTML = rows.map((task, index) => {
+        // Adjacent pinned rows are framed as one block, so each row needs to
+        // know whether it opens or closes a run.
+        const startsRun = task.highlighted && !(rows[index - 1] || {}).highlighted;
+        const endsRun = task.highlighted && !(rows[index + 1] || {}).highlighted;
+        const classes = [
+          this.selection.has(task.id) ? "selected" : "",
+          task.highlighted ? "is-pinned" : "",
+          startsRun ? "is-pinned-first" : "",
+          endsRun ? "is-pinned-last" : "",
+        ].filter(Boolean).join(" ");
+        // The accent is the user's own colour for that status, so it is set
+        // per row rather than baked into the stylesheet.
+        const accent = task.highlighted && this.store.highlightColor()
+          ? ` style="--status-accent:${this.store.highlightColor()}"`
+          : "";
+        return `
+        <tr class="${classes}" data-id="${task.id}"${accent}>
           <td><input type="checkbox" data-role="select" data-id="${task.id}"
                      ${this.selection.has(task.id) ? "checked" : ""}></td>
           ${this.columns.map((column) =>
             `<td class="${column.className || ""}">${column.cell(task)}</td>`).join("")}
-        </tr>`).join("");
+        </tr>`;
+      }).join("");
 
       this.emptyState.hidden = rows.length > 0;
       this.checkAll.checked = rows.length > 0 && rows.every((t) => this.selection.has(t.id));

@@ -689,7 +689,9 @@ input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
   display: grid;
   justify-content: start;
   gap: var(--card-gap, 9px);
-  padding: 4px;
+  /* Roomy enough that a pinned card's ring stays inside the group box and is
+     therefore included in the height layoutGroups() measures. */
+  padding: 8px;
   border-radius: var(--radius);
   transition: background 0.15s ease;
 }
@@ -803,7 +805,7 @@ input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
   --card-desc-lines: 1;
   --card-pad: 7px 9px;
   --card-title-size: 12.5px;
-  --card-gap: 6px;
+  --card-gap: 12px;
   --card-radius: 7px;
   --col-min: 220px;
   --col-gap: 10px;
@@ -814,7 +816,7 @@ input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
   --card-desc-lines: 3;
   --card-pad: 10px 11px;
   --card-title-size: 13.5px;
-  --card-gap: 9px;
+  --card-gap: 14px;
   --card-radius: 9px;
   --col-min: 275px;
   --col-gap: 14px;
@@ -825,7 +827,7 @@ input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
   --card-desc-lines: 9;
   --card-pad: 15px 16px;
   --card-title-size: 15px;
-  --card-gap: 13px;
+  --card-gap: 18px;
   --card-radius: 11px;
   --col-min: 340px;
   --col-gap: 18px;
@@ -1050,4 +1052,54 @@ tbody tr.flash { animation: row-flash 1.6s ease-out; }
   text-transform: none;
   color: var(--text-faint);
   opacity: 0.7;
+}
+
+/* ------------------------------------------------------- pinned status ---
+   Marks whichever status the user nominated as "pinned" (Active by default).
+   The accent is that status's own colour, passed in per element as
+   --status-accent, because it is user data rather than a theme token.
+
+   The ring is a box-shadow rather than an outline. `outline-offset` animates
+   by re-running outline painting each frame, which stutters; box-shadow spread
+   is composited and stays smooth. The first, background-coloured ring creates
+   the visible gap that outline-offset would have provided. */
+.card.is-pinned {
+  box-shadow:
+    0 0 0 3px var(--bg),
+    0 0 0 5px color-mix(in srgb, var(--status-accent) 75%, transparent);
+  transition: box-shadow 0.2s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+/* Reaches 6px on hover. Card gaps below are kept at 12px or more so two
+   adjacent pinned cards never touch, even when one is hovered. */
+.card.is-pinned:hover {
+  box-shadow:
+    0 0 0 4px var(--bg),
+    0 0 0 6px color-mix(in srgb, var(--status-accent) 75%, transparent);
+}
+
+/* Rows sit flush against one another, so a per-row ring would draw a stack of
+   touching frames. Instead a run of adjacent pinned rows is framed once: every
+   pinned row carries the side edges, and only the first and last of a run carry
+   the top and bottom, so the run reads as a single block. Run boundaries are
+   marked in layouts.js. The row background is left alone; the frame alone
+   carries the signal. */
+/* Each cell composes up to four edges. They live in custom properties because
+   separate rules would overwrite one another's box-shadow rather than add to
+   it, and a corner cell needs two edges at once. */
+tbody tr.is-pinned td {
+  box-shadow:
+    var(--edge-top, 0 0 transparent),
+    var(--edge-bottom, 0 0 transparent),
+    var(--edge-left, 0 0 transparent),
+    var(--edge-right, 0 0 transparent);
+}
+
+tbody tr.is-pinned td:first-child { --edge-left: inset 2px 0 0 0 var(--status-accent); }
+tbody tr.is-pinned td:last-child { --edge-right: inset -2px 0 0 0 var(--status-accent); }
+tbody tr.is-pinned-first td { --edge-top: inset 0 2px 0 0 var(--status-accent); }
+tbody tr.is-pinned-last td { --edge-bottom: inset 0 -2px 0 0 var(--status-accent); }
+
+tbody tr.is-pinned .task-id {
+  color: color-mix(in srgb, var(--status-accent) 70%, var(--text-dim));
 }
