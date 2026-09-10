@@ -9,6 +9,11 @@
   const UNGROUPED = "\u0000none";
   const EMPTY_BUCKET = "\u0000empty";
 
+  // Height of one implicit grid row. Groups span a whole number of these, which
+  // is how a masonry-style pack is built out of an ordinary CSS grid: the
+  // smaller the unit, the tighter the fit and the more rows the browser tracks.
+  const ROW_UNIT_PX = 8;
+
   /**
    * Card board. Shows only what the brief asked for — title, description and an
    * editable status — plus a jump button that hands the task over to the table.
@@ -37,6 +42,7 @@
       this.groupBy = "status";
       this.cardSize = "comfortable";
       this.dragging = null;
+      this.onResize = () => this.scheduleLayout();
     }
 
     mount(root) {
@@ -82,12 +88,72 @@
         this.render();
       });
 
+      window.addEventListener("resize", this.onResize);
+
       const sizePicker = root.querySelector('[data-role="card-size"]');
       sizePicker.value = this.cardSize;
       sizePicker.addEventListener("change", () => {
         this.cardSize = sizePicker.value;
         this.board.dataset.size = this.cardSize;
         this.ctx.persist({ board_card_size: this.cardSize });
+        this.layoutGroups();
+      });
+    }
+
+    unmount() {
+      window.removeEventListener("resize", this.onResize);
+      super.unmount();
+    }
+
+    scheduleLayout() {
+      cancelAnimationFrame(this.layoutHandle);
+      this.layoutHandle = requestAnimationFrame(() => this.layoutGroups());
+    }
+
+    /**
+     * Size every group block on the shared grid.
+     *
+     * Flexbox could not do this: a flex line is as tall as its tallest item, so
+     * a short group could never sit beside or underneath a taller neighbour.
+     * A grid places each group wherever it fits, but only once the group
+     * declares how many columns and rows it occupies — and the row count
+     * depends on rendered height, which is why it is measured here rather than
+     * expressed in CSS.
+     */
+    layoutGroups() {
+      const host = this.columnsHost;
+      if (!host || host.dataset.mode !== "groups") return;
+
+      const hostStyle = window.getComputedStyle(host);
+      const columnGap = parseFloat(hostStyle.columnGap) || 0;
+      const rowGap = parseFloat(hostStyle.rowGap) || 0;
+      const cardWidth =
+        parseFloat(window.getComputedStyle(this.board).getPropertyValue("--card-w")) || 260;
+
+      // How many card-width tracks actually fit right now. A group never spans
+      // more than this, so a wide group folds onto more rows instead of
+      // overflowing to the right.
+      const available = Math.max(
+        1, Math.floor((host.clientWidth + columnGap) / (cardWidth + columnGap)));
+
+      host.querySelectorAll(".board-group").forEach((group) => {
+        const count = Number(group.dataset.count) || 0;
+        const side = Math.max(1, Math.ceil(Math.sqrt(count)));
+        const span = Math.min(side, available);
+
+        if (count) {
+          // repeat() will not take its count from a custom property, so the
+          // template is written out here with a literal.
+          group.querySelector(".group-cards").style.gridTemplateColumns =
+            `repeat(${span}, minmax(0, var(--card-w, 260px)))`;
+        }
+
+        group.style.gridColumn = `span ${span}`;
+        // Cleared before measuring, or the previous span would be measured.
+        group.style.gridRow = "";
+        const height = group.getBoundingClientRect().height;
+        const rows = Math.max(1, Math.ceil((height + rowGap) / (ROW_UNIT_PX + rowGap)));
+        group.style.gridRow = `span ${rows}`;
       });
     }
 
@@ -150,7 +216,13 @@
       if (unset.length) {
         columns.push({ key: EMPTY_BUCKET, label: "Unset", color: null, tasks: unset });
       }
-      return columns;
+
+      // Empty groups sink to the end, keeping their relative order. They are
+      // still rendered: an empty group is the drop target for moving the first
+      // card into it.
+      return columns
+        .filter((column) => column.tasks.length)
+        .concat(columns.filter((column) => !column.tasks.length));
     }
 
     statusSelect(task) {
@@ -203,19 +275,30 @@
       const tasks = this.visibleTasks();
       const columns = this.buildColumns(tasks);
 
-      this.columnsHost.dataset.mode = this.groupBy === UNGROUPED ? "grid" : "columns";
-      this.columnsHost.innerHTML = columns.map((column) => `
-        <section class="board-column" data-key="${escapeHtml(column.key)}">
+      const grouped = this.groupBy !== UNGROUPED;
+      this.columnsHost.dataset.mode = grouped ? "groups" : "flat";
+
+      this.columnsHost.innerHTML = columns.map((column) => {
+        // Square-ish block: side length is the ceiling of the square root, so
+        // 3 cards lay out 2x2, 5 lay out 3x3, 10 lay out 4x4. Any short final
+        // row stays left-aligned, leaving the gaps on the right.
+        // Column and row spans are applied by layoutGroups() once the block has
+        // been measured; the markup only carries the card count it needs.
+        return `
+        <section class="board-group" data-key="${escapeHtml(column.key)}"
+                 data-count="${column.tasks.length}">
           <header class="column-head">
             <span class="column-dot" style="background:${column.color || "var(--text-faint)"}"></span>
             <span class="column-title">${escapeHtml(column.label)}</span>
             <span class="column-count">${column.tasks.length}</span>
           </header>
-          <div class="column-body" data-role="drop" data-key="${escapeHtml(column.key)}">
+          <div class="group-cards${column.tasks.length ? "" : " is-empty"}"
+               data-role="drop" data-key="${escapeHtml(column.key)}">
             ${column.tasks.map((task) => this.cardHtml(task)).join("")
               || '<p class="column-empty">Empty</p>'}
           </div>
-        </section>`).join("");
+        </section>`;
+      }).join("");
 
       this.emptyState.hidden = tasks.length > 0;
       this.hint.textContent = this.canDrag()
@@ -223,6 +306,7 @@
         : "";
 
       this.bindCards();
+      this.layoutGroups();
     }
 
     bindCards() {
@@ -248,7 +332,7 @@
         card.addEventListener("dragend", () => {
           this.dragging = null;
           card.classList.remove("dragging");
-          this.columnsHost.querySelectorAll(".column-body")
+          this.columnsHost.querySelectorAll(".group-cards")
             .forEach((body) => body.classList.remove("drop-target"));
         });
       });
