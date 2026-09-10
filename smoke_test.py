@@ -111,16 +111,61 @@ print("10. Monday 01:00 UTC boundary is timezone independent: OK")
 payload = client.get("/api/export").json()
 assert payload["schema_version"] == 2 and len(payload["tasks"]) == 3
 files = {"file": ("dump.json", json.dumps(payload), "application/json")}
-merged = client.post("/api/import?merge=true", files=files).json()
-ids = sorted(t["id"] for t in merged["tasks"])
-assert len(ids) == 6 and len(set(ids)) == 6
-clone = next(t for t in merged["tasks"] if t["id"] > 1002 and t["dependencies"])
-assert all(d > 1002 for d in clone["dependencies"]), clone
-assert len(clone["dependencies"]) == 2
-print("11. merge import renumbers ids and rewrites every dependency: OK")
+merged = client.post("/api/import?merge=true",
+                     files={"file": ("dump.json", json.dumps(payload), "application/json")}).json()
+# The same file merged into itself must change nothing: every task matches by id.
+assert len(merged["tasks"]) == len(payload["tasks"]), merged["tasks"]
 
-r = client.post("/api/tasks/delete", json={"ids": [d for d in clone["dependencies"]]}).json()
-survivor = next(t for t in r["tasks"] if t["id"] == clone["id"])
+# An edited copy of an exported task must update the original, not clone it.
+edited = json.loads(json.dumps(payload))
+edited["tasks"][0]["activity"] = "Renamed by import"
+edited["tasks"][0]["priority"] = "Low"
+target_id = edited["tasks"][0]["id"]
+merged = client.post("/api/import?merge=true",
+                     files={"file": ("dump.json", json.dumps(edited), "application/json")}).json()
+assert len(merged["tasks"]) == len(payload["tasks"]), "matching ids must not add rows"
+updated = next(t for t in merged["tasks"] if t["id"] == target_id)
+assert updated["activity"] == "Renamed by import" and updated["priority"] == "Low"
+
+# Same name but a different id: still the same task, matched by name.
+renumbered = json.loads(json.dumps(payload))
+renumbered["tasks"][0]["id"] = 99001
+renumbered["tasks"][0]["activity"] = "Renamed by import"
+renumbered["tasks"][0]["dependencies"] = []
+renumbered["tasks"][0]["description"] = "matched by name"
+before = len(merged["tasks"])
+merged = client.post("/api/import?merge=true",
+                     files={"file": ("dump.json", json.dumps(renumbered), "application/json")}).json()
+assert len(merged["tasks"]) == before, "a name match must not add a row"
+assert not any(t["id"] == 99001 for t in merged["tasks"]), "the existing id is kept"
+assert next(t for t in merged["tasks"] if t["id"] == target_id)["description"] == "matched by name"
+
+# A matching id wins even when the name differs: it is the same task.
+before = len(merged["tasks"])
+collide = {"schema_version": payload["schema_version"], "tasks": [
+    {"id": target_id, "activity": "Renamed via id match", "dependencies": []}]}
+merged = client.post("/api/import?merge=true",
+                     files={"file": ("dump.json", json.dumps(collide), "application/json")}).json()
+assert len(merged["tasks"]) == before, "an id match updates, never adds"
+assert next(t for t in merged["tasks"] if t["id"] == target_id)["activity"] \
+    == "Renamed via id match"
+
+# Neither id nor name matches, so this one really is new.
+fresh = {"schema_version": payload["schema_version"], "tasks": [
+    {"id": 99042, "activity": "Brand new task", "dependencies": []}]}
+merged = client.post("/api/import?merge=true",
+                     files={"file": ("dump.json", json.dumps(fresh), "application/json")}).json()
+assert len(merged["tasks"]) == before + 1
+added = next(t for t in merged["tasks"] if t["activity"] == "Brand new task")
+client.post("/api/tasks/delete", json={"ids": [added["id"]]})
+print("11. merge updates by id then by name, and only adds what is new: OK")
+
+ids_now = sorted(t["id"] for t in client.get("/api/state").json()["tasks"])
+client.patch(f"/api/tasks/{ids_now[-1]}", json={"changes": {"dependencies": [ids_now[0]]}})
+dependent = next(t for t in client.get("/api/state").json()["tasks"]
+                 if t["id"] == ids_now[-1])
+r = client.post("/api/tasks/delete", json={"ids": dependent["dependencies"]}).json()
+survivor = next(t for t in r["tasks"] if t["id"] == dependent["id"])
 assert survivor["dependencies"] == [] and survivor["prereq_status"] == "Ready"
 print("12. deleting a task strips it from dependency lists: OK")
 

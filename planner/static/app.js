@@ -348,8 +348,10 @@ class PlannerApp {
       const file = fileInput.files[0];
       if (!file) return;
       const merge = confirm(
-        "OK = merge into the current tasks (colliding ids get renumbered).\n" +
-        "Cancel = replace everything with the file."
+        "OK = merge: a task with a matching id or name is updated in place, "
+        + "anything else is added.\n\n"
+        + "Cancel = replace: everything currently here is discarded and the "
+        + "file becomes the whole planner."
       );
       try {
         this.store.apply(await this.api.importFile(file, merge));
