@@ -5,6 +5,7 @@
 (function () {
 
   const { Layout, escapeHtml } = window.PlannerLayouts;
+  const { Dropdown } = window.PlannerDropdown;
 
   const UNGROUPED = "\u0000none";
   const EMPTY_BUCKET = "\u0000empty";
@@ -89,6 +90,8 @@
       });
 
       window.addEventListener("resize", this.onResize);
+
+      Dropdown.enhanceAll(root.querySelector(".board-controls"));
 
       const sizePicker = root.querySelector('[data-role="card-size"]');
       sizePicker.value = this.cardSize;
@@ -229,12 +232,12 @@
 
     statusSelect(task) {
       const options = ['<option value="">—</option>'].concat(
-        this.store.valuesFor("status").map((value) =>
-          `<option value="${escapeHtml(value)}"${value === task.status ? " selected" : ""}
-           >${escapeHtml(value)}</option>`));
-      const color = this.store.colorFor("status", task.status);
-      const style = color ? ` style="color:${color};border-color:${color}"` : "";
-      return `<select class="card-status" data-role="status" data-id="${task.id}"${style}
+        this.store.valuesFor("status").map((value) => {
+          const color = this.store.colorFor("status", value);
+          return `<option value="${escapeHtml(value)}"${value === task.status ? " selected" : ""}
+                          ${color ? `data-color="${color}"` : ""}>${escapeHtml(value)}</option>`;
+        }));
+      return `<select class="card-status" data-role="status" data-id="${task.id}"
               >${options.join("")}</select>`;
     }
 
@@ -274,6 +277,30 @@
       return this.groupBy !== UNGROUPED;
     }
 
+    /**
+     * Create a task that already belongs to this group.
+     *
+     * The API assigns the id, so the new task is found by diffing the snapshot
+     * against the ids held before the call.
+     */
+    async addToGroup(key) {
+      const before = new Set(this.store.tasks.map((task) => task.id));
+      try {
+        const snapshot = await this.ctx.api.createTask();
+        const created = snapshot.tasks.find((task) => !before.has(task.id));
+        const value = key === EMPTY_BUCKET ? "" : key;
+
+        if (created && this.groupBy !== UNGROUPED && value) {
+          // commit() applies the snapshot it gets back.
+          this.ctx.commit(created.id, { [this.groupBy]: value });
+        } else {
+          this.store.apply(snapshot);
+        }
+      } catch (error) {
+        this.ctx.toast.show(error.message, true);
+      }
+    }
+
     render() {
       if (!this.columnsHost) return;
       if (this.ctx.tooltip) this.ctx.tooltip.hide();
@@ -301,7 +328,10 @@
           <div class="group-cards${column.tasks.length ? "" : " is-empty"}"
                data-role="drop" data-key="${escapeHtml(column.key)}">
             ${column.tasks.map((task) => this.cardHtml(task)).join("")
-              || '<p class="column-empty">Empty</p>'}
+              || `<button class="column-add" type="button" data-role="add-here"
+                          data-key="${escapeHtml(column.key)}">
+                    <span class="plus">+</span>Add
+                  </button>`}
           </div>
         </section>`;
       }).join("");
@@ -312,17 +342,25 @@
         : "";
 
       this.bindCards();
+      Dropdown.enhanceAll(this.columnsHost);
       this.layoutGroups();
     }
 
     bindCards() {
       this.columnsHost.querySelectorAll('[data-role="status"]').forEach((select) => {
-        select.addEventListener("change", () =>
-          this.ctx.commit(Number(select.dataset.id), { status: select.value }));
+        const id = Number(select.dataset.id);
+        // Wheel stepping lives in the dropdown component and arrives here as a
+        // normal change event. The write is deferred, so the card does not jump
+        // between groups mid-scroll.
+        select.addEventListener("change", () => this.ctx.commitDelayed(id, { status: select.value }));
       });
 
       this.columnsHost.querySelectorAll('[data-role="jump"]').forEach((button) => {
         button.addEventListener("click", () => this.ctx.focusTask(Number(button.dataset.id)));
+      });
+
+      this.columnsHost.querySelectorAll('[data-role="add-here"]').forEach((button) => {
+        button.addEventListener("click", () => this.addToGroup(button.dataset.key));
       });
 
       if (!this.canDrag()) return;

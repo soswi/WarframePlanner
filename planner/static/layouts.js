@@ -5,6 +5,8 @@
 // destructuring imports in app.js. Only window.PlannerLayouts escapes.
 (function () {
 
+  const { Dropdown } = window.PlannerDropdown;
+
   /**
    * A Layout owns everything between the toolbar and the bottom of the page:
    * it decides how tasks are arranged and how they are edited.
@@ -90,7 +92,7 @@
         { key: "activity", title: "Activity", sortable: true, cell: (t) => this.textCell(t, "activity", "Task name") },
         { key: "category", title: "Category", sortable: true, cell: (t) => this.selectCell(t, "category", "category") },
         { key: "description", title: "Description", sortable: false, className: "desc-cell", cell: (t) => this.descriptionCell(t) },
-        { key: "priority", title: "Priority", sortable: true, cell: (t) => this.selectCell(t, "priority", "priority") },
+        { key: "priority", title: "Priority", sortable: true, cell: (t) => this.dotCell(t, "priority", "priority") },
         { key: "status", title: "Status", sortable: true, cell: (t) => this.selectCell(t, "status", "status") },
         { key: "dependencies", title: "Dependencies", sortable: false, className: "dep-cell", cell: (t) => this.dependencyCell(t) },
         { key: "prereq_status", title: "Prereq Status", sortable: true, cell: (t) => this.prereqCell(t) },
@@ -208,12 +210,130 @@
     selectCell(task, field, kind) {
       const current = task[field] || "";
       const options = ['<option value="">—</option>'].concat(
-        this.store.valuesFor(kind).map((value) =>
-          `<option value="${escapeHtml(value)}"${value === current ? " selected" : ""}>${escapeHtml(value)}</option>`));
-      const color = this.store.colorFor(kind, current);
-      const style = color ? ` style="color:${color};font-weight:600"` : "";
+        this.store.valuesFor(kind).map((value) => {
+          const color = this.store.colorFor(kind, value);
+          return `<option value="${escapeHtml(value)}"${value === current ? " selected" : ""}
+                          ${color ? `data-color="${color}"` : ""}>${escapeHtml(value)}</option>`;
+        }));
       return `<select class="cell-select" data-field="${field}" data-id="${task.id}"
-                      data-tooltip="${escapeHtml(current)}"${style}>${options.join("")}</select>`;
+              >${options.join("")}</select>`;
+    }
+
+    /** A colour dot that opens our own menu; see .dot-menu in the stylesheet. */
+    dotCell(task, field, kind) {
+      const current = task[field] || "";
+      const color = this.store.colorFor(kind, current);
+      const style = color ? ` style="--dot-color:${color}"` : "";
+      const tip = current
+        ? ` data-tooltip="${escapeHtml(current)}" data-tooltip-always`
+          + ` data-tooltip-tint="${color || ""}"`
+        : "";
+      return `<button type="button" class="dot-select" data-role="dot-select"
+                      data-field="${field}" data-kind="${kind}" data-id="${task.id}"
+                      aria-label="${escapeHtml(field)}"${style}${tip}>
+        <span class="dot${current ? "" : " is-unset"}"></span>
+      </button>`;
+    }
+
+    /** Values a dot cell can take, blank first so a value can be cleared. */
+    dotValues(kind) {
+      return [""].concat(this.store.valuesFor(kind));
+    }
+
+    /** Repaint a dot cell in place, without waiting for the deferred write. */
+    paintDot(host, kind, value, direction) {
+      const color = this.store.colorFor(kind, value);
+      host.style.setProperty("--dot-color", color || "");
+      host.dataset.value = value;
+
+      const dot = host.querySelector(".dot");
+      dot.classList.toggle("is-unset", !value);
+      if (value) {
+        host.dataset.tooltip = value;
+        host.dataset.tooltipAlways = "";
+        host.dataset.tooltipTint = color || "";
+      } else {
+        delete host.dataset.tooltip;
+      }
+
+      if (!direction) return;
+      const animation = direction > 0 ? "reel-up" : "reel-down";
+      dot.classList.remove("reel-up", "reel-down");
+      // Reading offsetWidth restarts the animation when the same class is
+      // reapplied on a fast second step.
+      void dot.offsetWidth;
+      dot.classList.add(animation);
+    }
+
+    bindDotCells() {
+      this.tbody.querySelectorAll('[data-role="dot-select"]').forEach((host) => {
+        const id = Number(host.dataset.id);
+        const field = host.dataset.field;
+        const kind = host.dataset.kind;
+        if (host.dataset.value === undefined) {
+          const task = this.store.tasks.find((t) => t.id === id);
+          host.dataset.value = (task && task[field]) || "";
+        }
+
+        host.addEventListener("click", (event) => {
+          event.stopPropagation();
+          this.openDotMenu(host, id, field, kind);
+        });
+
+        host.addEventListener("wheel", (event) => {
+          event.preventDefault();
+          const values = this.dotValues(kind);
+          const step = event.deltaY > 0 ? 1 : -1;
+          const next = values.indexOf(host.dataset.value || "") + step;
+          if (next < 0 || next >= values.length) return;
+          this.paintDot(host, kind, values[next], step);
+          this.ctx.commitDelayed(id, { [field]: values[next] });
+        }, { passive: false });
+      });
+    }
+
+    openDotMenu(host, id, field, kind) {
+      this.closeDotMenu();
+
+      const menu = document.createElement("div");
+      menu.className = "dot-menu";
+      menu.innerHTML = this.dotValues(kind).map((value) => {
+        return `<button type="button" data-value="${escapeHtml(value)}"
+                        aria-selected="${value === host.dataset.value}"
+                >${escapeHtml(value || "None")}</button>`;
+      }).join("");
+
+      const box = host.getBoundingClientRect();
+      menu.style.left = `${box.left}px`;
+      menu.style.top = `${box.bottom + 4}px`;
+      menu.style.position = "fixed";
+      document.body.appendChild(menu);
+
+      menu.querySelectorAll("button").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const value = button.dataset.value;
+          this.paintDot(host, kind, value, 0);
+          this.closeDotMenu();
+          this.ctx.commitDelayed(id, { [field]: value });
+        });
+      });
+
+      this.openMenu = menu;
+      this.dismissMenu = () => this.closeDotMenu();
+      document.addEventListener("click", this.dismissMenu, { once: true });
+      window.addEventListener("scroll", this.dismissMenu, { once: true, capture: true });
+    }
+
+    closeDotMenu() {
+      if (!this.openMenu) return;
+      this.openMenu.remove();
+      this.openMenu = null;
+      if (this.dismissMenu) {
+        document.removeEventListener("click", this.dismissMenu);
+        window.removeEventListener("scroll", this.dismissMenu, true);
+        this.dismissMenu = null;
+      }
     }
 
     descriptionCell(task) {
@@ -287,6 +407,15 @@
     render() {
       if (!this.tbody) return;
       if (this.ctx.tooltip) this.ctx.tooltip.hide();
+      this.closeDotMenu();
+
+      // FLIP: remember where every row is before the rebuild, so the ones that
+      // move can be animated from their old position afterwards.
+      const before = new Map();
+      this.tbody.querySelectorAll("tr[data-id]").forEach((row) => {
+        before.set(row.dataset.id, row.getBoundingClientRect().top);
+      });
+
       const rows = this.visibleTasks();
 
       this.tbody.innerHTML = rows.map((task, index) => {
@@ -317,7 +446,38 @@
       this.emptyState.hidden = rows.length > 0;
       this.checkAll.checked = rows.length > 0 && rows.every((t) => this.selection.has(t.id));
       this.bindRows();
+      Dropdown.enhanceAll(this.tbody);
+      this.animateReflow(before);
       this.applyPendingFocus();
+    }
+
+    /** Play back the distance each surviving row travelled during the rebuild. */
+    animateReflow(before) {
+      if (!before.size) return;
+      const moved = [];
+
+      this.tbody.querySelectorAll("tr[data-id]").forEach((row) => {
+        const previousTop = before.get(row.dataset.id);
+        if (previousTop === undefined) return;
+        const delta = previousTop - row.getBoundingClientRect().top;
+        if (!delta) return;
+        row.classList.add("reflowing");
+        row.style.transition = "none";
+        row.style.transform = `translateY(${delta}px)`;
+        moved.push(row);
+      });
+
+      if (!moved.length) return;
+      requestAnimationFrame(() => {
+        moved.forEach((row) => {
+          row.style.transition = "transform 200ms cubic-bezier(0.22, 1, 0.36, 1)";
+          row.style.transform = "";
+          setTimeout(() => {
+            row.classList.remove("reflowing");
+            row.style.transition = "";
+          }, 240);
+        });
+      });
     }
 
     bindRows() {
@@ -333,9 +493,21 @@
           this.ctx.commit(Number(input.dataset.id), { [input.dataset.field]: input.value }));
       });
 
-      this.tbody.querySelectorAll(".cell-select").forEach((select) => {
-        select.addEventListener("change", () =>
-          this.ctx.commit(Number(select.dataset.id), { [select.dataset.field]: select.value }));
+      this.bindDotCells();
+
+      this.tbody.querySelectorAll("select[data-field]").forEach((select) => {
+        const id = Number(select.dataset.id);
+        const field = select.dataset.field;
+
+        select.addEventListener("change", () => {
+          // Status reorders the list, so its write waits a beat; the trigger
+          // has already repainted itself.
+          if (field === "status") {
+            this.ctx.commitDelayed(id, { status: select.value });
+          } else {
+            this.ctx.commit(id, { [field]: select.value });
+          }
+        });
       });
 
       this.tbody.querySelectorAll('[data-role="dep-add"]').forEach((select) => {
