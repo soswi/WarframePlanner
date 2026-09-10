@@ -47,8 +47,13 @@ pip install -r requirements-build.txt
 pyinstaller WarframePlanner.spec
 ```
 
-Output: `dist/WarframePlanner.exe` (or a bare binary on Linux/macOS). The spec sets
-`console=False`; flip it to `True` if you need to see logs while debugging.
+Output: `dist/WarframePlanner-<version>.exe` (or a bare binary on Linux/macOS),
+for example `dist/WarframePlanner-0.0.0.exe`. The version comes from
+`__version__` in `planner/__init__.py`, which the spec reads at build time, so a
+release only needs that one line bumped.
+
+The spec sets `console=False`; flip it to `True` if you need to see logs while
+debugging.
 
 PyInstaller only builds for the platform it runs on.
 

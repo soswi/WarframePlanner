@@ -23,9 +23,14 @@ client = TestClient(create_app(service))
 state = client.get("/api/state").json()
 assert state["tasks"] == []
 assert [d["value"] for d in state["definitions"]["status"]] == ["Done", "In Progress", "Stuck"]
-assert [d["value"] for d in state["definitions"]["category"]] == [
-    "Void Fissure", "Credits", "Platinum", "Resources", "Build", "Standing",
-    "Preparation", "Event", "Clan", "Alliance", "Level Up", "Mastery Rank"]
+category_colours = {d["value"]: d["color"] for d in state["definitions"]["category"]}
+assert category_colours["Credits"] == "#0f97ff"
+assert category_colours["Platinum"] == "#c7eeff"
+assert [d["value"] for d in state["definitions"]["category"]][-2:] == ["Kuva", "Grind"]
+assert len(state["definitions"]["category"]) == 14
+assert [d["value"] for d in state["definitions"]["priority"]] == [
+    "High", "Medium", "Low", "Very High"]
+assert [d["value"] for d in state["definitions"]["status"]] == ["Done", "In Progress", "Stuck"]
 assert [r["key"] for r in state["recurrence"]] == ["One-off", "Daily", "Weekly"]
 assert [t["key"] for t in state["themes"]] == ["zariman", "orokin", "corpus",
                                               "grineer", "infested"]
@@ -148,8 +153,8 @@ SqliteRepository(Path(legacy))  # rerunning the migration must be a no-op
 assert {t.id: t.dependencies for t in migrated.list_tasks()}[1001] == [1000]
 print("13. v1 database migrates to multi-dependency schema, idempotently: OK")
 
-def legacy_v2(categories):
-    """Build a v2 database carrying the given category definitions."""
+def legacy_v2(definitions):
+    """Build a v2 database carrying the given {kind: {value: colour}} palettes."""
     path = os.path.join(tempfile.mkdtemp(), "v2.db")
     conn = sqlite3.connect(path)
     conn.executescript("""
@@ -164,27 +169,52 @@ def legacy_v2(categories):
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     PRAGMA user_version = 2;
     """)
-    for pos, value in enumerate(categories):
-        conn.execute("INSERT INTO definitions (kind, value, position) VALUES ('category',?,?)",
-                     (value, pos))
+    for kind, palette in definitions.items():
+        for pos, (value, color) in enumerate(palette.items()):
+            conn.execute(
+                "INSERT INTO definitions (kind, value, color, position) VALUES (?,?,?,?)",
+                (kind, value, color, pos))
     conn.commit()
     conn.close()
     return Path(path)
 
-from planner.repository import LEGACY_CATEGORIES, V3_CATEGORIES
 
-def categories_after_migration(path):
-    return [d.value for d in SqliteRepository(path).list_definitions() if d.kind == "category"]
+def palette_after_migration(path, kind):
+    repo = SqliteRepository(path)
+    return {d.value: d.color for d in repo.list_definitions() if d.kind == kind}
 
-values = categories_after_migration(legacy_v2(sorted(LEGACY_CATEGORIES)))
-assert values[-2:] == ["Level Up", "Mastery Rank"] and len(values) == 12, values
 
-values = categories_after_migration(legacy_v2(sorted(V3_CATEGORIES)))
-assert values[-2:] == ["Level Up", "Mastery Rank"] and len(values) == 12, values
+from planner.config import DEFAULT_DEFINITIONS
+from planner.repository import STOCK_PALETTES
 
-values = categories_after_migration(legacy_v2(["My own", "Second one"]))
-assert values == ["My own", "Second one"], values
-print("13b. stock category lists are replaced, a customised one never is: OK")
+# Every palette ever shipped must be recognised and refreshed.
+for kind, shipped_sets in STOCK_PALETTES.items():
+    expected = dict(DEFAULT_DEFINITIONS[kind])
+    for shipped in shipped_sets:
+        got = palette_after_migration(legacy_v2({kind: shipped}), kind)
+        assert got == expected, (kind, got)
+
+# Same names, one recoloured entry: touched, so it must survive untouched.
+recoloured = dict(STOCK_PALETTES["status"][0])
+recoloured["Done"] = "#123456"
+got = palette_after_migration(legacy_v2({"status": recoloured}), "status")
+assert got == recoloured, got
+
+# A renamed entry is equally a customisation.
+custom = {"My own": "#ffffff", "Second one": "#000000"}
+got = palette_after_migration(legacy_v2({"category": custom}), "category")
+assert got == custom, got
+
+# Kinds are judged independently: a customised status must not freeze categories.
+mixed = legacy_v2({"status": recoloured, "category": STOCK_PALETTES["category"][0]})
+repo = SqliteRepository(mixed)
+by_kind = {}
+for d in repo.list_definitions():
+    by_kind.setdefault(d.kind, {})[d.value] = d.color
+assert by_kind["status"] == recoloured
+assert by_kind["category"] == dict(DEFAULT_DEFINITIONS["category"])
+
+print("13b. every shipped palette refreshes; any customised one is kept: OK")
 
 import subprocess, shutil
 if shutil.which("node"):
@@ -420,5 +450,31 @@ assert client.post("/api/shutdown").status_code == 400, \
 ping = client.get("/api/ping").json()
 assert ping["app"] == "warframe-planner" and isinstance(ping["pid"], int)
 print("23. quit control present, ping identifies the app, shutdown needs a hook: OK")
+
+# Reordering in the modal is DOM-only; the order is persisted by the ordinary
+# save, so the API must honour the sequence it is handed.
+reordered = [
+    {"value": "Very High", "color": "#ec4657"},
+    {"value": "High", "color": "#fda817"},
+    {"value": "Low", "color": "#9ac4fe"},
+    {"value": "Medium", "color": "#ffc370"},
+]
+snap = client.put("/api/definitions",
+                  json={"kind": "priority", "entries": reordered}).json()
+assert [d["value"] for d in snap["definitions"]["priority"]] == \
+    ["Very High", "High", "Low", "Medium"]
+assert [d["position"] for d in snap["definitions"]["priority"]] == [0, 1, 2, 3]
+# Order must survive a round trip, not just the response that wrote it.
+again = client.get("/api/state").json()["definitions"]["priority"]
+assert [d["value"] for d in again] == ["Very High", "High", "Low", "Medium"]
+client.put("/api/definitions", json={"kind": "priority", "entries": [
+    {"value": v, "color": c} for v, c in DEFAULT_DEFINITIONS["priority"]]})
+
+html = client.get("/").text
+assert "def-grip" not in html, "the grip is rendered by app.js, not baked into the page"
+grip_js = client.get("/static/app.js").text
+assert "def-grip" in grip_js and 'draggable="true"' in grip_js
+assert "rowAfterPointer" in grip_js and "bindReordering" in grip_js
+print("24. definition order is persisted and the drag handle is wired: OK")
 
 print("\nALL TESTS PASSED")

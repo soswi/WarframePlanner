@@ -111,7 +111,7 @@ class DefinitionsModal {
   open() {
     this.body.innerHTML = this.kinds.map((kind) => `
       <div class="def-group" data-kind="${kind}">
-        <h3>${kind}</h3>
+        <h3>${kind} <span class="def-hint">drag to reorder</span></h3>
         <div class="def-list">
           ${(this.store.definitions[kind] || []).map((d) => this.rowHtml(d.value, d.color)).join("")}
         </div>
@@ -122,8 +122,10 @@ class DefinitionsModal {
       group.querySelector(".add-def").addEventListener("click", () => {
         group.querySelector(".def-list").insertAdjacentHTML("beforeend", this.rowHtml("", "#94a3b8"));
         this.bindRemovals(group);
+        this.bindReordering(group);
       });
       this.bindRemovals(group);
+      this.bindReordering(group);
     });
 
     const statuses = this.store.valuesFor("status");
@@ -150,17 +152,81 @@ class DefinitionsModal {
   }
 
   rowHtml(value, color) {
+    // Only the handle is draggable, so the text and colour inputs keep their
+    // normal click-and-select behaviour.
     return `<div class="def-row">
+      <span class="def-grip" draggable="true" title="Drag to reorder" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/>
+          <circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/>
+          <circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/>
+        </svg>
+      </span>
       <input type="color" value="${color}">
       <input type="text" value="${escapeHtml(value)}" placeholder="value">
-      <button type="button" title="Remove">&times;</button>
+      <button type="button" class="def-remove" title="Remove">&times;</button>
     </div>`;
   }
 
   bindRemovals(group) {
-    group.querySelectorAll(".def-row button").forEach((button) => {
+    group.querySelectorAll(".def-remove").forEach((button) => {
       button.onclick = () => button.closest(".def-row").remove();
     });
+  }
+
+  /**
+   * Vertical drag-to-reorder within one definition list.
+   *
+   * Rows are moved in the DOM as the pointer passes each midpoint, so the list
+   * previews the result while dragging. Order is read back from the DOM on
+   * save, which is why no separate model needs updating here.
+   */
+  bindReordering(group) {
+    const list = group.querySelector(".def-list");
+
+    group.querySelectorAll(".def-grip").forEach((grip) => {
+      const row = grip.closest(".def-row");
+
+      grip.addEventListener("dragstart", (event) => {
+        this.draggedRow = row;
+        row.classList.add("dragging");
+        event.dataTransfer.effectAllowed = "move";
+        // Firefox will not start a drag without a payload.
+        event.dataTransfer.setData("text/plain", "");
+      });
+
+      grip.addEventListener("dragend", () => {
+        row.classList.remove("dragging");
+        this.draggedRow = null;
+      });
+    });
+
+    list.addEventListener("dragover", (event) => {
+      const row = this.draggedRow;
+      if (!row || !list.contains(row)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+
+      const after = this.rowAfterPointer(list, event.clientY);
+      if (after === row) return;
+      if (after === null) {
+        list.appendChild(row);
+      } else {
+        list.insertBefore(row, after);
+      }
+    });
+
+    list.addEventListener("drop", (event) => event.preventDefault());
+  }
+
+  /** First row whose midpoint sits below the pointer, or null past the end. */
+  rowAfterPointer(list, y) {
+    const others = Array.from(list.querySelectorAll(".def-row:not(.dragging)"));
+    for (const candidate of others) {
+      const box = candidate.getBoundingClientRect();
+      if (y < box.top + box.height / 2) return candidate;
+    }
+    return null;
   }
 
   close() { this.backdrop.hidden = true; }
