@@ -615,41 +615,52 @@ input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
   padding-bottom: 8px;
 }
 
-.board-columns[data-mode="columns"] {
+/* One shared container. Groups are grid items spanning a measured number of
+   card-width columns and 8px rows; spans are assigned by layoutGroups().
+   Sparse `row` flow, deliberately not `dense`: the placement cursor only moves
+   forward, so group order is preserved exactly, while each group still takes
+   the first free slot ahead of it — to the right when the row has room, and
+   only then further down. `dense` would backfill earlier holes and let a later
+   group jump in front of an earlier one. */
+.board-columns {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--col-min, 275px), 1fr));
-  align-items: start;
+  grid-template-columns: repeat(auto-fill, var(--card-w, 260px));
+  grid-auto-rows: 8px;
+  grid-auto-flow: row;
+  justify-content: start;
   gap: var(--col-gap, 14px);
 }
 
-.board-columns[data-mode="grid"] .column-head { display: none; }
+.board-columns[data-mode="flat"] { display: block; }
 
-.board-columns[data-mode="grid"] .column-body {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--col-min, 275px), 1fr));
-  gap: var(--col-gap, 14px);
-  max-height: none;
-}
-
-.board-column {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
+.board-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  /* The block is only as tall as its contents; the row span reserves the
+     space, so nothing may stretch to fill it. */
+  align-self: start;
 }
 
 .column-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  background: var(--head-bg);
+  padding: 0 2px 7px;
   border-bottom: 1px solid var(--border);
+  /* Without this the header keeps its natural width and pushes the count past
+     the group's right edge instead of letting the title truncate. */
+  min-width: 0;
+  max-width: 100%;
 }
 
 .column-dot { width: 8px; height: 8px; border-radius: 99px; flex: none; }
 
 .column-title {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.07em;
@@ -661,7 +672,7 @@ input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
 }
 
 .column-count {
-  margin-left: auto;
+  flex: none;
   font-family: var(--mono);
   font-size: 11px;
   color: var(--text-faint);
@@ -670,29 +681,50 @@ input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
   padding: 1px 7px;
 }
 
-.column-body {
-  display: flex;
-  flex-direction: column;
+/* The column template is written inline per group by board.js, because the
+   repetition count in repeat() cannot come from a custom property. Everything
+   else lives here. No max-height and no overflow: every card in a group is
+   meant to stay visible. */
+.group-cards {
+  display: grid;
+  justify-content: start;
   gap: var(--card-gap, 9px);
-  padding: var(--card-gap, 9px);
-  min-height: 66px;
-  max-height: 54vh;
-  overflow-y: auto;
+  padding: 4px;
+  border-radius: var(--radius);
   transition: background 0.15s ease;
 }
 
-.column-body.drop-target {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  outline: 1px dashed var(--accent);
-  outline-offset: -6px;
+/* An empty group keeps exactly one card's width, so the header stays readable
+   and the block still reads as a drop target. */
+.group-cards.is-empty {
+  display: block;
+  width: var(--card-w, 260px);
 }
 
+/* Ungrouped: no square, just fill the row. */
+.board-columns[data-mode="flat"] .column-head { display: none; }
+
+.board-columns[data-mode="flat"] .group-cards {
+  grid-template-columns: repeat(auto-fill, minmax(var(--col-min, 275px), 1fr));
+  justify-content: stretch;
+}
+
+.group-cards.drop-target {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  outline: 1px dashed var(--accent);
+  outline-offset: -3px;
+}
+
+/* An empty group still needs a body: it is the drop target that lets you move
+   the first card into it. */
 .column-empty {
   margin: 0;
-  padding: 10px 2px;
+  padding: 14px;
   font-size: 12px;
   color: var(--text-faint);
   text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
 }
 
 .card {
@@ -767,6 +799,7 @@ input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
 .board[data-size="compact"] .card-desc.empty-desc { display: none; }
 
 .board[data-size="compact"] {
+  --card-w: 215px;
   --card-desc-lines: 1;
   --card-pad: 7px 9px;
   --card-title-size: 12.5px;
@@ -777,6 +810,7 @@ input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
 }
 
 .board[data-size="comfortable"] {
+  --card-w: 260px;
   --card-desc-lines: 3;
   --card-pad: 10px 11px;
   --card-title-size: 13.5px;
@@ -787,6 +821,7 @@ input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
 }
 
 .board[data-size="roomy"] {
+  --card-w: 320px;
   --card-desc-lines: 9;
   --card-pad: 15px 16px;
   --card-title-size: 15px;
@@ -834,8 +869,7 @@ tbody tr.flash { animation: row-flash 1.6s ease-out; }
   padding: 10px 14px;
 }
 
-.board-column { transition: border-color 0.15s ease; }
-.board-column:hover { border-color: color-mix(in srgb, var(--border) 60%, var(--text-faint)); }
+
 
 /* ------------------------------------------------------------- tab strip ---
    Browser-style tabs joined to the content below: the active tab shares the
