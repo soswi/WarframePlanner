@@ -1,4 +1,4 @@
 from .config import APP_NAME, APP_TITLE
 
 __all__ = ["APP_NAME", "APP_TITLE"]
-__version__ = "0.1.1-pre-release"
+__version__ = "0.1.1"
