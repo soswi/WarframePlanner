@@ -34,7 +34,9 @@ class Api {
   }
 
   state() { return this.request("/api/state"); }
-  createTask() { return this.request("/api/tasks?at_top=true", { method: "POST" }); }
+  createTask(changes) {
+    return this.json("/api/tasks?at_top=true", "POST", changes ? { changes } : {});
+  }
   updateTask(id, changes) { return this.json(`/api/tasks/${id}`, "PATCH", { changes }); }
   deleteTasks(ids) { return this.json("/api/tasks/delete", "POST", { ids }); }
   duplicateTasks(ids) { return this.json("/api/tasks/duplicate", "POST", { ids }); }
@@ -190,7 +192,7 @@ class DefinitionsModal {
         <input type="text" class="hex" value="${escapeHtml(color)}" spellcheck="false"
                maxlength="7" aria-label="Hex colour">
       </span>
-      <input type="text" value="${escapeHtml(value)}" placeholder="value">
+      <input type="text" class="def-value" value="${escapeHtml(value)}" placeholder="value">
       <button type="button" class="def-remove" title="Remove">&times;</button>
     </div>`;
   }
@@ -292,7 +294,9 @@ class DefinitionsModal {
       for (const kind of this.kinds) {
         const group = this.body.querySelector(`.def-group[data-kind="${kind}"]`);
         const entries = Array.from(group.querySelectorAll(".def-row")).map((row) => ({
-          value: row.querySelector('input[type="text"]').value.trim(),
+          // Must be .def-value, not input[type="text"]: the hex field is also a
+          // text input and comes first in the row.
+          value: row.querySelector(".def-value").value.trim(),
           color: row.querySelector(".hex").value.trim().toLowerCase(),
         })).filter((entry) => entry.value);
         snapshot = await this.api.saveDefinitions(kind, entries);

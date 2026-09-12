@@ -68,7 +68,7 @@ DEFAULT_DEFINITIONS = {
         ("Level Up", "#20ee9f"),
         ("Mastery Rank", "#e879f9"),
         ("Kuva", "#ff2e43"),
-        ("Grind", "#3300ff"),
+        ("Grind", "#8a14ff"),
     ],
 }
 
