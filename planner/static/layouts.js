@@ -71,6 +71,137 @@
     toArray() { return Array.from(this.ids); }
   }
 
+  /**
+   * A colour dot that opens a themed menu, shared by the table and the board.
+   *
+   * Not a native <select>: an <option> cannot pair a coloured dot with text in
+   * a different colour, and the popup itself is drawn by the operating system
+   * and cannot be themed.
+   */
+  class DotSelect {
+    constructor(context) {
+      this.ctx = context;
+      this.store = context.store;
+      this.menu = null;
+      this.dismiss = null;
+    }
+
+    values(kind) {
+      return [""].concat(this.store.valuesFor(kind));
+    }
+
+    html(task, field, kind) {
+      const current = task[field] || "";
+      const color = this.store.colorFor(kind, current);
+      const style = color ? ` style="--dot-color:${color}"` : "";
+      const tip = current
+        ? ` data-tooltip="${escapeHtml(current)}" data-tooltip-always`
+          + ` data-tooltip-tint="${color || ""}"`
+        : "";
+      return `<button type="button" class="dot-select" data-role="dot-select"
+                      data-field="${field}" data-kind="${kind}" data-id="${task.id}"
+                      data-value="${escapeHtml(current)}"
+                      aria-label="${escapeHtml(field)}"${style}${tip}>
+        <span class="dot${current ? "" : " is-unset"}"></span>
+      </button>`;
+    }
+
+    /** Repaint in place, ahead of the deferred write. */
+    paint(host, kind, value, direction) {
+      const color = this.store.colorFor(kind, value);
+      host.style.setProperty("--dot-color", color || "");
+      host.dataset.value = value;
+
+      const dot = host.querySelector(".dot");
+      dot.classList.toggle("is-unset", !value);
+      if (value) {
+        host.dataset.tooltip = value;
+        host.dataset.tooltipAlways = "";
+        host.dataset.tooltipTint = color || "";
+      } else {
+        delete host.dataset.tooltip;
+      }
+
+      if (!direction) return;
+      const animation = direction > 0 ? "reel-up" : "reel-down";
+      dot.classList.remove("reel-up", "reel-down");
+      // Forces a reflow so the same animation restarts on a fast second step.
+      void dot.offsetWidth;
+      dot.classList.add(animation);
+    }
+
+    bind(root) {
+      root.querySelectorAll('[data-role="dot-select"]').forEach((host) => {
+        const id = Number(host.dataset.id);
+        const field = host.dataset.field;
+        const kind = host.dataset.kind;
+
+        host.addEventListener("click", (event) => {
+          event.stopPropagation();
+          this.openMenu(host, id, field, kind);
+        });
+
+        host.addEventListener("wheel", (event) => {
+          event.preventDefault();
+          const values = this.values(kind);
+          const step = event.deltaY > 0 ? 1 : -1;
+          const next = values.indexOf(host.dataset.value || "") + step;
+          if (next < 0 || next >= values.length) return;
+          this.paint(host, kind, values[next], step);
+          this.ctx.commitDelayed(id, { [field]: values[next] });
+        }, { passive: false });
+      });
+    }
+
+    openMenu(host, id, field, kind) {
+      this.closeMenu();
+
+      const menu = document.createElement("div");
+      menu.className = "dot-menu";
+      menu.innerHTML = this.values(kind).map((value) =>
+        `<button type="button" data-value="${escapeHtml(value)}"
+                 aria-selected="${value === host.dataset.value}"
+         >${escapeHtml(value || "None")}</button>`).join("");
+
+      const box = host.getBoundingClientRect();
+      menu.style.position = "fixed";
+      menu.style.left = `${box.left}px`;
+      menu.style.top = `${box.bottom + 4}px`;
+      document.body.appendChild(menu);
+
+      const menuBox = menu.getBoundingClientRect();
+      if (menuBox.bottom > window.innerHeight - 8) {
+        menu.style.top = `${Math.max(8, box.top - menuBox.height - 4)}px`;
+      }
+
+      menu.querySelectorAll("button").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const value = button.dataset.value;
+          this.paint(host, kind, value, 0);
+          this.closeMenu();
+          this.ctx.commitDelayed(id, { [field]: value });
+        });
+      });
+
+      this.menu = menu;
+      this.dismiss = () => this.closeMenu();
+      document.addEventListener("click", this.dismiss, { once: true });
+      window.addEventListener("scroll", this.dismiss, { once: true, capture: true });
+    }
+
+    closeMenu() {
+      if (!this.menu) return;
+      this.menu.remove();
+      this.menu = null;
+      if (this.dismiss) {
+        document.removeEventListener("click", this.dismiss);
+        window.removeEventListener("scroll", this.dismiss, true);
+        this.dismiss = null;
+      }
+    }
+  }
+
   class TableLayout extends Layout {
     static key = "table";
     static label = "Table";
@@ -78,6 +209,7 @@
     constructor(context) {
       super(context);
       this.markdown = context.markdown;
+      this.dots = new DotSelect(context);
       this.sortKey = null;
       this.sortDirection = 1;
       this.filter = "";
@@ -219,121 +351,8 @@
               >${options.join("")}</select>`;
     }
 
-    /** A colour dot that opens our own menu; see .dot-menu in the stylesheet. */
     dotCell(task, field, kind) {
-      const current = task[field] || "";
-      const color = this.store.colorFor(kind, current);
-      const style = color ? ` style="--dot-color:${color}"` : "";
-      const tip = current
-        ? ` data-tooltip="${escapeHtml(current)}" data-tooltip-always`
-          + ` data-tooltip-tint="${color || ""}"`
-        : "";
-      return `<button type="button" class="dot-select" data-role="dot-select"
-                      data-field="${field}" data-kind="${kind}" data-id="${task.id}"
-                      aria-label="${escapeHtml(field)}"${style}${tip}>
-        <span class="dot${current ? "" : " is-unset"}"></span>
-      </button>`;
-    }
-
-    /** Values a dot cell can take, blank first so a value can be cleared. */
-    dotValues(kind) {
-      return [""].concat(this.store.valuesFor(kind));
-    }
-
-    /** Repaint a dot cell in place, without waiting for the deferred write. */
-    paintDot(host, kind, value, direction) {
-      const color = this.store.colorFor(kind, value);
-      host.style.setProperty("--dot-color", color || "");
-      host.dataset.value = value;
-
-      const dot = host.querySelector(".dot");
-      dot.classList.toggle("is-unset", !value);
-      if (value) {
-        host.dataset.tooltip = value;
-        host.dataset.tooltipAlways = "";
-        host.dataset.tooltipTint = color || "";
-      } else {
-        delete host.dataset.tooltip;
-      }
-
-      if (!direction) return;
-      const animation = direction > 0 ? "reel-up" : "reel-down";
-      dot.classList.remove("reel-up", "reel-down");
-      // Reading offsetWidth restarts the animation when the same class is
-      // reapplied on a fast second step.
-      void dot.offsetWidth;
-      dot.classList.add(animation);
-    }
-
-    bindDotCells() {
-      this.tbody.querySelectorAll('[data-role="dot-select"]').forEach((host) => {
-        const id = Number(host.dataset.id);
-        const field = host.dataset.field;
-        const kind = host.dataset.kind;
-        if (host.dataset.value === undefined) {
-          const task = this.store.tasks.find((t) => t.id === id);
-          host.dataset.value = (task && task[field]) || "";
-        }
-
-        host.addEventListener("click", (event) => {
-          event.stopPropagation();
-          this.openDotMenu(host, id, field, kind);
-        });
-
-        host.addEventListener("wheel", (event) => {
-          event.preventDefault();
-          const values = this.dotValues(kind);
-          const step = event.deltaY > 0 ? 1 : -1;
-          const next = values.indexOf(host.dataset.value || "") + step;
-          if (next < 0 || next >= values.length) return;
-          this.paintDot(host, kind, values[next], step);
-          this.ctx.commitDelayed(id, { [field]: values[next] });
-        }, { passive: false });
-      });
-    }
-
-    openDotMenu(host, id, field, kind) {
-      this.closeDotMenu();
-
-      const menu = document.createElement("div");
-      menu.className = "dot-menu";
-      menu.innerHTML = this.dotValues(kind).map((value) => {
-        return `<button type="button" data-value="${escapeHtml(value)}"
-                        aria-selected="${value === host.dataset.value}"
-                >${escapeHtml(value || "None")}</button>`;
-      }).join("");
-
-      const box = host.getBoundingClientRect();
-      menu.style.left = `${box.left}px`;
-      menu.style.top = `${box.bottom + 4}px`;
-      menu.style.position = "fixed";
-      document.body.appendChild(menu);
-
-      menu.querySelectorAll("button").forEach((button) => {
-        button.addEventListener("click", (event) => {
-          event.stopPropagation();
-          const value = button.dataset.value;
-          this.paintDot(host, kind, value, 0);
-          this.closeDotMenu();
-          this.ctx.commitDelayed(id, { [field]: value });
-        });
-      });
-
-      this.openMenu = menu;
-      this.dismissMenu = () => this.closeDotMenu();
-      document.addEventListener("click", this.dismissMenu, { once: true });
-      window.addEventListener("scroll", this.dismissMenu, { once: true, capture: true });
-    }
-
-    closeDotMenu() {
-      if (!this.openMenu) return;
-      this.openMenu.remove();
-      this.openMenu = null;
-      if (this.dismissMenu) {
-        document.removeEventListener("click", this.dismissMenu);
-        window.removeEventListener("scroll", this.dismissMenu, true);
-        this.dismissMenu = null;
-      }
+      return this.dots.html(task, field, kind);
     }
 
     descriptionCell(task) {
@@ -407,7 +426,7 @@
     render() {
       if (!this.tbody) return;
       if (this.ctx.tooltip) this.ctx.tooltip.hide();
-      this.closeDotMenu();
+      this.dots.closeMenu();
 
       // FLIP: remember where every row is before the rebuild, so the ones that
       // move can be animated from their old position afterwards.
@@ -493,7 +512,7 @@
           this.ctx.commit(Number(input.dataset.id), { [input.dataset.field]: input.value }));
       });
 
-      this.bindDotCells();
+      this.dots.bind(this.tbody);
 
       this.tbody.querySelectorAll("select[data-field]").forEach((select) => {
         const id = Number(select.dataset.id);
@@ -599,6 +618,8 @@
       .replace(/"/g, "&quot;");
   }
 
-  window.PlannerLayouts = { Layout, TableLayout, LayoutRegistry, SelectionModel, escapeHtml };
+  window.PlannerLayouts = {
+    Layout, TableLayout, LayoutRegistry, SelectionModel, DotSelect, escapeHtml,
+  };
 
 })();

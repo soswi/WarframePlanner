@@ -4,7 +4,7 @@
 // lexical scope. Registers itself onto the existing PlannerLayouts namespace.
 (function () {
 
-  const { Layout, escapeHtml } = window.PlannerLayouts;
+  const { Layout, DotSelect, escapeHtml } = window.PlannerLayouts;
   const { Dropdown } = window.PlannerDropdown;
 
   const UNGROUPED = "\u0000none";
@@ -39,6 +39,7 @@
     constructor(context) {
       super(context);
       this.markdown = context.markdown;
+      this.dots = new DotSelect(context);
       this.filter = "";
       this.groupBy = "status";
       this.cardSize = "comfortable";
@@ -244,9 +245,13 @@
     cardHtml(task) {
       const title = task.activity || `Task ${task.id}`;
       const description = task.description
-        ? `<div class="card-desc markdown" data-tooltip="${escapeHtml(task.description)}"
+        ? `<div class="card-desc markdown" data-role="desc" data-id="${task.id}"
+                data-tooltip="${escapeHtml(task.description)}"
                 data-tooltip-format="markdown">${this.markdown.render(task.description)}</div>`
-        : '<div class="card-desc empty-desc">No description</div>';
+        : `<div class="card-desc empty-desc" data-role="desc" data-id="${task.id}"
+           >Add a description</div>`;
+
+      const priorityDot = this.dots.html(task, "priority", "priority");
 
       const blockers = (task.blocked_by || []).length + (task.missing_dependencies || []).length;
       const badge = blockers
@@ -267,10 +272,99 @@
                     data-tooltip="Open this task in the table" data-tooltip-always
                     title="Open in table">&#8599;</button>
           </header>
-          <h3 class="card-title" data-tooltip="${escapeHtml(title)}">${escapeHtml(title)}</h3>
+          <div class="card-title-row">
+            <h3 class="card-title" data-role="title" data-id="${task.id}"
+                data-tooltip="${escapeHtml(title)}">${escapeHtml(title)}</h3>
+            ${priorityDot}
+          </div>
           ${description}
           <footer class="card-foot">${this.statusSelect(task)}</footer>
         </article>`;
+    }
+
+    /**
+     * Swap the heading for an input in place.
+     *
+     * The card is draggable, so the input turns dragging off while it is open;
+     * otherwise a click-and-drag to select text would start a card drag
+     * instead.
+     */
+    editTitle(heading) {
+      const id = Number(heading.dataset.id);
+      const task = this.store.tasks.find((t) => t.id === id);
+      if (!task) return;
+
+      const card = heading.closest(".card");
+      const wasDraggable = card.draggable;
+      card.draggable = false;
+
+      const editor = document.createElement("input");
+      editor.type = "text";
+      editor.className = "card-title-editor";
+      editor.value = task.activity || "";
+      editor.placeholder = "Task name";
+      heading.replaceWith(editor);
+      editor.focus();
+      editor.select();
+
+      let settled = false;
+      const finish = (save) => {
+        if (settled) return;
+        settled = true;
+        card.draggable = wasDraggable;
+        const value = editor.value.trim();
+        if (save && value !== (task.activity || "")) {
+          this.ctx.commit(id, { activity: value });
+        } else {
+          this.render();
+        }
+      };
+
+      editor.addEventListener("blur", () => finish(true));
+      editor.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") { event.preventDefault(); finish(true); }
+        else if (event.key === "Escape") { event.preventDefault(); finish(false); }
+      });
+    }
+
+    /** Same in-place swap as the title, with a textarea for Markdown. */
+    editDescription(node) {
+      const id = Number(node.dataset.id);
+      const task = this.store.tasks.find((t) => t.id === id);
+      if (!task) return;
+
+      const card = node.closest(".card");
+      const wasDraggable = card.draggable;
+      card.draggable = false;
+
+      const editor = document.createElement("textarea");
+      editor.className = "card-desc-editor";
+      editor.value = task.description || "";
+      editor.placeholder = "Markdown supported";
+      node.replaceWith(editor);
+      editor.focus();
+
+      let settled = false;
+      const finish = (save) => {
+        if (settled) return;
+        settled = true;
+        card.draggable = wasDraggable;
+        if (save && editor.value !== (task.description || "")) {
+          this.ctx.commit(id, { description: editor.value });
+        } else {
+          this.render();
+        }
+      };
+
+      editor.addEventListener("blur", () => finish(true));
+      editor.addEventListener("keydown", (event) => {
+        // Enter inserts a newline; Ctrl+Enter commits, Escape discards.
+        if (event.key === "Escape") { event.preventDefault(); finish(false); }
+        else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          finish(true);
+        }
+      });
     }
 
     canDrag() {
@@ -284,18 +378,14 @@
      * against the ids held before the call.
      */
     async addToGroup(key) {
-      const before = new Set(this.store.tasks.map((task) => task.id));
+      const value = key === EMPTY_BUCKET ? "" : key;
+      const changes = this.groupBy !== UNGROUPED && value
+        ? { [this.groupBy]: value }
+        : null;
       try {
-        const snapshot = await this.ctx.api.createTask();
-        const created = snapshot.tasks.find((task) => !before.has(task.id));
-        const value = key === EMPTY_BUCKET ? "" : key;
-
-        if (created && this.groupBy !== UNGROUPED && value) {
-          // commit() applies the snapshot it gets back.
-          this.ctx.commit(created.id, { [this.groupBy]: value });
-        } else {
-          this.store.apply(snapshot);
-        }
+        // One request: the task is created already belonging to this group, so
+        // the board repaints once rather than twice.
+        this.store.apply(await this.ctx.api.createTask(changes));
       } catch (error) {
         this.ctx.toast.show(error.message, true);
       }
@@ -330,7 +420,11 @@
             ${column.tasks.map((task) => this.cardHtml(task)).join("")
               || `<button class="column-add" type="button" data-role="add-here"
                           data-key="${escapeHtml(column.key)}">
-                    <span class="plus">+</span>Add
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9"/>
+                      <path d="M12 8.5v7M8.5 12h7"/>
+                    </svg>
+                    <span>Add task</span>
                   </button>`}
           </div>
         </section>`;
@@ -363,10 +457,21 @@
         button.addEventListener("click", () => this.addToGroup(button.dataset.key));
       });
 
+      this.columnsHost.querySelectorAll('[data-role="title"]').forEach((heading) => {
+        heading.addEventListener("click", () => this.editTitle(heading));
+      });
+
+      this.columnsHost.querySelectorAll('[data-role="desc"]').forEach((node) => {
+        node.addEventListener("click", () => this.editDescription(node));
+      });
+
+      this.dots.bind(this.columnsHost);
+
       if (!this.canDrag()) return;
 
       this.columnsHost.querySelectorAll(".card").forEach((card) => {
         card.addEventListener("dragstart", (event) => {
+          if (event.target.closest(".dot-select")) { event.preventDefault(); return; }
           this.dragging = Number(card.dataset.id);
           card.classList.add("dragging");
           event.dataTransfer.effectAllowed = "move";

@@ -378,8 +378,14 @@ class PlannerService:
 
         incoming = [Task.from_dict(raw) for raw in payload.get("tasks", [])]
 
+        # Definitions are applied in both modes. A merge that silently dropped
+        # them left no way to repair a damaged palette without replacing every
+        # task as well.
         if merge:
             self._merge_tasks(incoming)
+            for kind, entries in (payload.get("definitions") or {}).items():
+                if kind != "recurrence":
+                    self.save_definitions(kind, entries)
         else:
             self.repo.replace_tasks(incoming)
             for kind, entries in (payload.get("definitions") or {}).items():
