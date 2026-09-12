@@ -19,6 +19,13 @@ class TaskUpdate(BaseModel):
     changes: dict[str, Any]
 
 
+class TaskCreate(BaseModel):
+    """Separate from TaskUpdate: creating without any initial values is normal,
+    so `changes` defaults to empty rather than being required."""
+
+    changes: dict[str, Any] = {}
+
+
 class IdList(BaseModel):
     ids: list[int]
 
@@ -65,8 +72,16 @@ def build_router(service: PlannerService,
         return service.snapshot()
 
     @router.post("/tasks")
-    def create_task(at_top: bool = True) -> dict[str, Any]:
-        service.create_task(at_top=at_top)
+    def create_task(at_top: bool = True,
+                    payload: Optional[TaskCreate] = None) -> dict[str, Any]:
+        """Create a task, optionally with its first field values already set.
+
+        Accepting them here keeps 'add into this group' to a single round trip,
+        so the client repaints once instead of twice.
+        """
+        created = service.create_task(at_top=at_top)
+        if payload and payload.changes:
+            service.update_task(created["id"], payload.changes)
         return service.snapshot()
 
     @router.patch("/tasks/{task_id}")
