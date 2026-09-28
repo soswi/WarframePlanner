@@ -106,7 +106,20 @@ override the directory. For backups, copy `planner.db` or use **Export**.
   their current status. Turn it off under Definitions if you want to override it
 - Cycle detection across the whole dependency graph, not just direct self-reference
 - Status / Priority / Category values are editable in the UI **together with their
-  colours**, so a new value is coloured everywhere immediately
+  colours**, so a new value is coloured everywhere immediately. **Reset to
+  defaults** in the Definitions dialog restores the shipped palette; settings and
+  the values stored on tasks are left as they are
+- **Completion rate** counts only tasks that carry a status. A task with no
+  status has not been triaged yet, so it is left out rather than dragging the
+  rate down:
+
+  ```
+  completion rate = tasks with the completion status / tasks with any status
+  ```
+
+  With 5 tasks, 2 of them Done, 1 In Progress and 2 without a status, the rate is
+  2 / 3 = 67%, not 2 / 5 = 40%. The Total tasks card still counts all five. The
+  completion status is Done by default and can be changed under Definitions
 - Recurrence: `One-off`, `Daily`, `Weekly`. Resets happen at 01:00 UTC and are
   computed in UTC, so behaviour is identical in every timezone. The last reset
   boundary is recorded, so a reset fires exactly once per window even after a

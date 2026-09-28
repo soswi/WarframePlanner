@@ -59,7 +59,13 @@ class TaskService:
         return out
 
     def stats(self) -> dict[str, Any]:
-        """Counts per status plus the completion ratio."""
+        """Counts per status plus the completion ratio.
+
+        The ratio is taken over tasks that carry a status. A task with none has
+        not been triaged yet, and counting it would drag the rate down for
+        reasons that say nothing about progress. ``total`` still counts every
+        task.
+        """
         tasks = self.repo.list_tasks()
         done_status = self.settings.done_status()
 
@@ -68,13 +74,14 @@ class TaskService:
             if task.status:
                 counts[task.status] = counts.get(task.status, 0) + 1
 
-        total = len(tasks)
+        rated = sum(counts.values())
         done = counts.get(done_status, 0)
         return {
-            "total": total,
+            "total": len(tasks),
+            "rated": rated,
             "counts": counts,
             "done": done,
-            "completion_rate": (done / total) if total else 0.0,
+            "completion_rate": (done / rated) if rated else 0.0,
         }
 
     def next_id(self) -> int:

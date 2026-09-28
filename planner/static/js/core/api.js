@@ -28,6 +28,7 @@ export class Api {
   deleteTasks(ids) { return this.json("/api/tasks/delete", "POST", { ids }); }
   duplicateTasks(ids) { return this.json("/api/tasks/duplicate", "POST", { ids }); }
   shutdown() { return this.request("/api/shutdown", { method: "POST" }); }
+  resetDefinitions() { return this.request("/api/definitions/reset", { method: "POST" }); }
   saveDefinitions(kind, entries) { return this.json("/api/definitions", "PUT", { kind, entries }); }
   saveSettings(settings) { return this.json("/api/settings", "PUT", { settings }); }
 

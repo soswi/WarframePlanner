@@ -107,6 +107,10 @@ class PlannerService:
         """Replace one definition kind."""
         self.definitions_service.save(kind, entries)
 
+    def reset_definitions(self) -> None:
+        """Restore every definition kind to the shipped palette."""
+        self.definitions_service.reset_to_defaults()
+
     def save_settings(self, settings: dict[str, str]) -> None:
         """Store settings after validating theme and layout keys."""
         self.settings.save(settings)

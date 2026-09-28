@@ -20,6 +20,12 @@ def build_router(service: PlannerService) -> APIRouter:
         service.save_definitions(payload.kind, payload.entries)
         return service.snapshot()
 
+    @router.post("/definitions/reset")
+    def reset_definitions() -> dict[str, Any]:
+        """Restore every definition kind to the shipped palette."""
+        service.reset_definitions()
+        return service.snapshot()
+
     @router.put("/settings")
     def save_settings(payload: SettingsPayload) -> dict[str, Any]:
         """Store settings."""
