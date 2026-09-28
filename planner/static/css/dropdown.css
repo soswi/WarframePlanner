@@ -1,0 +1,136 @@
+/* Themed select replacement and the dot picker. */
+
+/* --------------------------------------------------------- priority dot ---
+   The cell shows a colour dot instead of a word. The real <select> is laid
+   over it at zero opacity, so clicking still opens the native list and
+   keyboard focus keeps working. */
+.dot-select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 26px;
+}
+
+.dot-select .dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 99px;
+  background: var(--dot-color, var(--text-faint));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-color, var(--text-faint)) 18%, transparent);
+  transition: box-shadow 0.15s ease;
+}
+
+.dot-select:hover .dot {
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--dot-color, var(--text-faint)) 26%, transparent);
+}
+
+.dot-select .dot.is-unset {
+  background: none;
+  border: 1.5px dashed var(--text-faint);
+  box-shadow: none;
+}
+
+.dot-select {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+}
+
+.dot-select:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+
+/* Own dropdown rather than a native <select>: an <option> cannot carry a
+   coloured dot next to text in a different colour. */
+.dot-menu,
+.dd-menu {
+  position: absolute;
+  z-index: 60;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+}
+
+.dot-menu button,
+.dd-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 9px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dot-menu button:hover,
+.dd-menu button:hover { background: var(--surface-3); }
+
+.dot-menu button[aria-selected="true"],
+.dd-menu button[aria-selected="true"] { background: var(--surface-3); font-weight: 600; }
+
+/* Slot-machine step: the marker rolls in from the direction of travel and is
+   clipped by the cell, so nothing spills into neighbouring rows. */
+@keyframes reel-down {
+  from { transform: translateY(-130%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes reel-up {
+  from { transform: translateY(130%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.reel-down { animation: reel-down 160ms cubic-bezier(0.22, 1, 0.36, 1); }
+
+.reel-up { animation: reel-up 160ms cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* The native control stays in the DOM as the value holder, but is never seen. */
+.dd-native {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The trigger inherits the classes of the select it replaced, so sizing rules
+   such as .cell-select or .picker still apply; only the internals differ. */
+.dd-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dd-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dd-caret {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-right: 1px;
+  border-right: 1.5px solid var(--text-faint);
+  border-bottom: 1.5px solid var(--text-faint);
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.dd-trigger:hover .dd-caret { border-color: var(--text-dim); }

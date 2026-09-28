@@ -1,0 +1,7 @@
+/* Scrollbar styling. */
+
+::-webkit-scrollbar { width: 11px; height: 11px; }
+
+::-webkit-scrollbar-track { background: var(--bg); }
+
+::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 6px; border: 2px solid var(--bg); }
