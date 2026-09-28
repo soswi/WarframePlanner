@@ -40,6 +40,31 @@ server: it finds the running one, opens a browser tab pointing at it, and exits.
 Closing the tab leaves the process running. To actually stop it, use the red
 quit button at the right of the toolbar.
 
+### Test environment
+
+```
+python main.py --run-test-env
+```
+
+Runs the same application against a fresh, empty database, so you can see what
+a first launch looks like. The banner shows a large `TEST ENV` marker; nothing
+else differs.
+
+The test environment is fully separate from your own data. It lives in the
+system temp directory, keeps its own session record and prefers its own port
+(8732, against 8731 for production), so it can run alongside a normal instance
+without either noticing the other. Launching with the flag again returns to the
+running test instance; launching without it always opens production.
+
+The quit button deletes the test environment. Deletion is refused unless the
+directory carries the test prefix, sits directly in the temp root, contains a
+marker file written at creation, and does not overlap your data directory. A
+test run killed rather than quit leaves its directory behind; the next
+`--run-test-env` sweeps it away.
+
+The flag works on the built executable too:
+`WarframePlanner-0.2.0.exe --run-test-env`.
+
 ## Building the executable
 
 ```
@@ -142,7 +167,8 @@ planner/
     schemas.py             request bodies
     routes/                one module per area
   runtime/
-    server.py              ports, single-instance handover, streams, shutdown
+    server.py              launch modes, single-instance handover, shutdown
+    environment.py         production and test environments, guarded cleanup
   static/
     index.html
     css/                   split by area, assembled by main.css with @import

@@ -78,3 +78,23 @@
 /* Give each KPI card its own accent rule so the row reads as a set of gauges
    rather than a row of boxes. Set from JS via --kpi-accent. */
 .kpi[style*="--kpi-accent"]::before { background: var(--kpi-accent); }
+
+/* Marks a disposable test run. The only visual difference between
+   environments, so it is deliberately loud and not tied to the theme. */
+.banner { position: relative; }
+
+.env-badge {
+  position: absolute;
+  top: 50%;
+  right: 32px;
+  transform: translateY(-50%);
+  padding: 6px 16px;
+  border: 2px solid #ff8a1f;
+  border-radius: 8px;
+  color: #ff8a1f;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  background: rgba(255, 138, 31, 0.1);
+}
+

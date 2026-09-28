@@ -293,7 +293,25 @@ class PlannerApp {
     document.getElementById("progressFill").style.width = `${stats.completion_rate * 100}%`;
   }
 
+  /**
+   * Flag a disposable test run in the banner. The only visible difference
+   * between environments, so it is loud on purpose.
+   */
+  async showEnvironment() {
+    try {
+      const environment = await this.api.environment();
+      if (!environment.test) return;
+      const badge = document.createElement("span");
+      badge.className = "env-badge";
+      badge.textContent = environment.label || "TEST ENV";
+      document.querySelector(".banner").appendChild(badge);
+    } catch (_) {
+      // An older backend without the endpoint is production by definition.
+    }
+  }
+
   async start() {
+    this.showEnvironment();
     try {
       const snapshot = await this.api.state();
       this.themes.load(snapshot.themes);

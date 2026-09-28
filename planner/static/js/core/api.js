@@ -20,6 +20,7 @@ export class Api {
   }
 
   state() { return this.request("/api/state"); }
+  environment() { return this.request("/api/environment"); }
   createTask(changes) {
     return this.json("/api/tasks?at_top=true", "POST", changes ? { changes } : {});
   }
