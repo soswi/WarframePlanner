@@ -6,7 +6,7 @@ Bumping ``DB_SCHEMA_VERSION`` without adding a matching step in
 
 from __future__ import annotations
 
-DB_SCHEMA_VERSION = 7
+DB_SCHEMA_VERSION = 8
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (

@@ -13,11 +13,12 @@ from ..defaults import DEFAULT_DEFINITIONS
 from .schema import DB_SCHEMA_VERSION
 
 # Every definition palette this application has ever shipped, keyed by kind.
+# Each is written in its shipped display order; dicts keep insertion order.
 #
-# A migration replaces a palette only when it matches one of these exactly,
-# value AND colour. Several releases kept the same names and changed only the
-# colours, so comparing names alone would quietly discard a palette the user had
-# recoloured.
+# A migration replaces a palette only when it matches one of these exactly:
+# value, colour AND order. Several releases kept the same names and changed only
+# the colours, and one changed only the order, so a looser comparison would
+# quietly discard a palette the user had recoloured or rearranged.
 LEGACY_CATEGORIES = {
     "Void / Relics": "#a78bfa", "Void Fissure": "#a78bfa",
     "Void Resources": "#a78bfa", "Foundry": "#f472b6",
@@ -49,6 +50,8 @@ STOCK_PALETTES: dict[str, tuple[dict[str, str], ...]] = {
     ),
     "priority": (
         {"High": "#f59e0b", "Medium": "#0ea5e9", "Low": "#94a3b8"},
+        # Shipped with Very High last; v8 moves it to the top.
+        {"High": "#fda817", "Medium": "#ffc370", "Low": "#9ac4fe", "Very High": "#ec4657"},
     ),
     "status": (
         {"Done": "#10b981", "In Progress": "#3b82f6", "Stuck": "#ef4444"},
@@ -116,10 +119,11 @@ def _refresh_stock_palettes(conn: sqlite3.Connection, version: int) -> None:
 
     for kind, shipped in STOCK_PALETTES.items():
         rows = conn.execute(
-            "SELECT value, color FROM definitions WHERE kind = ?", (kind,)
+            "SELECT value, color FROM definitions WHERE kind = ? ORDER BY position",
+            (kind,),
         ).fetchall()
-        present = {row["value"]: row["color"] for row in rows}
-        if not any(present == palette for palette in shipped):
+        present = [(row["value"], row["color"]) for row in rows]
+        if not any(present == list(palette.items()) for palette in shipped):
             continue
 
         conn.execute("DELETE FROM definitions WHERE kind = ?", (kind,))

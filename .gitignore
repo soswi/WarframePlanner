@@ -6,3 +6,4 @@ dist/
 *.spec.bak
 temp/
 commit-msg.txt
+notes.md

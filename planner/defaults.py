@@ -17,10 +17,10 @@ DEFAULT_DEFINITIONS: dict[str, list[tuple[str, str]]] = {
         ("Active", "#1ce9db"),
     ],
     "priority": [
+        ("Very High", "#ec4657"),
         ("High", "#fda817"),
         ("Medium", "#ffc370"),
         ("Low", "#9ac4fe"),
-        ("Very High", "#ec4657"),
     ],
     "category": [
         ("Void Fissure", "#fda817"),

@@ -30,7 +30,7 @@ assert category_colours["Platinum"] == "#c7eeff"
 assert [d["value"] for d in state["definitions"]["category"]][-2:] == ["Kuva", "Grind"]
 assert len(state["definitions"]["category"]) == 14
 assert [d["value"] for d in state["definitions"]["priority"]] == [
-    "High", "Medium", "Low", "Very High"]
+    "Very High", "High", "Medium", "Low"]
 assert [d["value"] for d in state["definitions"]["status"]] == [
     "Done", "In Progress", "Stuck", "Active"]
 assert [r["key"] for r in state["recurrence"]] == ["One-off", "Daily", "Weekly"]
