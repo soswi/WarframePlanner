@@ -13,6 +13,7 @@ export class DefinitionsModal {
 
     document.getElementById("btnCloseDefs").addEventListener("click", () => this.close());
     document.getElementById("btnSaveDefs").addEventListener("click", () => this.save());
+    document.getElementById("btnResetDefs").addEventListener("click", () => this.reset());
     this.backdrop.addEventListener("click", (event) => {
       if (event.target === this.backdrop) this.close();
     });
@@ -183,6 +184,24 @@ export class DefinitionsModal {
   }
 
   close() { this.backdrop.hidden = true; }
+
+  /**
+   * Restore the shipped palette. Unsaved edits in the dialog are discarded, and
+   * the dialog is rebuilt so it shows what was actually stored.
+   */
+  async reset() {
+    if (!confirm("Reset every status, priority and category to the defaults?\n\n"
+                 + "Custom values and colours are removed. Tasks keep their own "
+                 + "values, so any that no longer match a definition will show "
+                 + "without colour.")) return;
+    try {
+      this.store.apply(await this.api.resetDefinitions());
+      this.open();
+      this.toast.show("Definitions reset to defaults.");
+    } catch (error) {
+      this.toast.show(error.message, true);
+    }
+  }
 
   async save() {
     if (!this.body.querySelector(".def-group")) { this.close(); return; }

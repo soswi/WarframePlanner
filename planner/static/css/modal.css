@@ -246,3 +246,11 @@
 
 /* The label of a setting never carries a value colour. */
 .settings-row .dd-label { color: var(--text) !important; font-weight: 400 !important; }
+
+/* Reset sits beside Save, kept neutral so the destructive action is not the
+   one that draws the eye. */
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}

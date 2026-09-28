@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..defaults import DEFAULT_DEFINITIONS
 from ..models import Definition, PlannerError
 from ..storage import Repository
 
@@ -66,3 +67,16 @@ class DefinitionService:
             if kind in CODE_DEFINED_KINDS:
                 continue
             self.save(kind, entries)
+
+    def reset_to_defaults(self) -> None:
+        """Replace every editable kind with the shipped palette.
+
+        Settings are left alone. One that names a value the defaults do not
+        contain, such as a renamed completion status, keeps pointing at it.
+        """
+        for kind, values in DEFAULT_DEFINITIONS.items():
+            self.repo.replace_definitions(
+                kind,
+                [Definition(kind=kind, value=value, color=color) for value, color in values],
+            )
+
