@@ -1,0 +1,403 @@
+/* Board layout: groups, cards and their controls. */
+
+/* ---------------------------------------------------------------- board ---- */
+
+.board { margin: 0 32px 44px; }
+
+.board-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.board-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.board-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  padding-bottom: 8px;
+}
+
+/* One shared container. Groups are grid items spanning a measured number of
+   card-width columns and 8px rows; spans are assigned by layoutGroups().
+   Sparse `row` flow, deliberately not `dense`: the placement cursor only moves
+   forward, so group order is preserved exactly, while each group still takes
+   the first free slot ahead of it — to the right when the row has room, and
+   only then further down. `dense` would backfill earlier holes and let a later
+   group jump in front of an earlier one. */
+.board-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--card-w, 260px));
+  grid-auto-rows: 8px;
+  grid-auto-flow: row;
+  justify-content: start;
+  gap: var(--col-gap, 14px);
+}
+
+.board-columns[data-mode="flat"] { display: block; }
+
+.board-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  /* The block is only as tall as its contents; the row span reserves the
+     space, so nothing may stretch to fill it. */
+  align-self: start;
+}
+
+.column-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px 7px;
+  border-bottom: 1px solid var(--border);
+  /* Without this the header keeps its natural width and pushes the count past
+     the group's right edge instead of letting the title truncate. */
+  min-width: 0;
+  max-width: 100%;
+}
+
+.column-dot { width: 8px; height: 8px; border-radius: 99px; flex: none; }
+
+.column-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.column-count {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  background: var(--surface-2);
+  border-radius: 99px;
+  padding: 1px 7px;
+}
+
+/* The column template is written inline per group by board.js, because the
+   repetition count in repeat() cannot come from a custom property. Everything
+   else lives here. No max-height and no overflow: every card in a group is
+   meant to stay visible. */
+.group-cards {
+  display: grid;
+  justify-content: start;
+  gap: var(--card-gap, 9px);
+  /* Roomy enough that a pinned card's ring stays inside the group box and is
+     therefore included in the height layoutGroups() measures. */
+  padding: 8px;
+  border-radius: var(--radius);
+  transition: background 0.15s ease;
+}
+
+/* An empty group keeps exactly one card's width, so the header stays readable
+   and the block still reads as a drop target. */
+.group-cards.is-empty {
+  display: block;
+  width: var(--card-w, 260px);
+}
+
+/* Ungrouped: no square, just fill the row. */
+.board-columns[data-mode="flat"] .column-head { display: none; }
+
+.board-columns[data-mode="flat"] .group-cards {
+  grid-template-columns: repeat(auto-fill, minmax(var(--col-min, 275px), 1fr));
+  justify-content: stretch;
+}
+
+.group-cards.drop-target {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  outline: 1px dashed var(--accent);
+  outline-offset: -3px;
+}
+
+/* An empty group still needs a body: it is the drop target that lets you move
+   the first card into it. */
+.column-empty {
+  margin: 0;
+  padding: 14px;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius, 9px);
+  padding: var(--card-pad, 10px 11px);
+  cursor: grab;
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+
+.card:hover { border-color: var(--text-faint); }
+
+.card.dragging { opacity: 0.45; transform: scale(0.98); cursor: grabbing; }
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+}
+
+.card-id {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.card-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 15%, transparent);
+  border-radius: 99px;
+  padding: 1px 7px;
+}
+
+.card-jump {
+  margin-left: auto;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 6px;
+}
+
+.card-jump:hover { color: var(--accent); border-color: var(--border); }
+
+.card-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+/* The priority control on a card is the same DotSelect the table uses. The
+   padding is what lets the dot's glow render: the button clips its overflow so
+   the reel animation stays inside, and without room the halo was cut off. */
+.card-title-row .dot-select {
+  flex: none;
+  width: auto;
+  min-height: 0;
+  margin-top: 1px;
+  padding: 5px;
+}
+
+.card-title-editor {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 3px 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--card-title-size, 13.5px);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.card-title-editor:focus { outline: none; }
+
+.card-title { cursor: text; }
+
+.card-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--card-title-size, 13.5px);
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  overflow: hidden;
+  max-height: 2.7em;
+}
+
+/* Fixed height either way, so a card without a description is the same size as
+   one with it and the grid rows stay even. */
+.card-desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  overflow: hidden;
+  height: calc(var(--card-desc-lines, 3) * 1.45em);
+  margin-bottom: 9px;
+}
+
+.card-desc { cursor: text; }
+
+/* Barely there until you go looking for it. */
+.card-desc.empty-desc {
+  display: flex;
+  align-items: center;
+  color: var(--text-faint);
+  font-style: italic;
+  opacity: 0.35;
+  transition: opacity 0.15s ease;
+}
+
+.card:hover .card-desc.empty-desc { opacity: 0.7; }
+
+.card-desc-editor {
+  width: 100%;
+  min-height: calc(var(--card-desc-lines, 3) * 1.45em);
+  margin-bottom: 9px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 6px 7px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.card-desc-editor:focus { outline: none; }
+
+.board[data-size="compact"] .card-desc.empty-desc { display: none; }
+
+.board[data-size="compact"] {
+  --card-w: 215px;
+  --card-desc-lines: 1;
+  --card-pad: 7px 9px;
+  --card-title-size: 12.5px;
+  --card-gap: 12px;
+  --card-radius: 7px;
+  --col-min: 220px;
+  --col-gap: 10px;
+}
+
+.board[data-size="comfortable"] {
+  --card-w: 260px;
+  --card-desc-lines: 3;
+  --card-pad: 10px 11px;
+  --card-title-size: 13.5px;
+  --card-gap: 14px;
+  --card-radius: 9px;
+  --col-min: 275px;
+  --col-gap: 14px;
+}
+
+.board[data-size="roomy"] {
+  --card-w: 320px;
+  --card-desc-lines: 9;
+  --card-pad: 15px 16px;
+  --card-title-size: 15px;
+  --card-gap: 18px;
+  --card-radius: 11px;
+  --col-min: 340px;
+  --col-gap: 18px;
+}
+
+.card-foot { display: flex; }
+
+.card-status {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 7px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.card-status:focus { outline: none; border-color: var(--accent); }
+
+.card-status option { background: var(--surface-2); color: var(--text); font-weight: 400; }
+
+/* Board controls sit on a plate so they read as view settings, not page chrome. */
+.board-controls {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+
+/* ------------------------------------------------------- pinned status ---
+   Marks whichever status the user nominated as "pinned" (Active by default).
+   The accent is that status's own colour, passed in per element as
+   --status-accent, because it is user data rather than a theme token.
+
+   The ring is a box-shadow rather than an outline. `outline-offset` animates
+   by re-running outline painting each frame, which stutters; box-shadow spread
+   is composited and stays smooth. The first, background-coloured ring creates
+   the visible gap that outline-offset would have provided. */
+.card.is-pinned {
+  box-shadow:
+    0 0 0 3px var(--bg),
+    0 0 0 5px color-mix(in srgb, var(--status-accent) 75%, transparent);
+  transition: box-shadow 0.2s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+/* Reaches 6px on hover. Card gaps below are kept at 12px or more so two
+   adjacent pinned cards never touch, even when one is hovered. */
+.card.is-pinned:hover {
+  box-shadow:
+    0 0 0 4px var(--bg),
+    0 0 0 6px color-mix(in srgb, var(--status-accent) 75%, transparent);
+}
+
+/* ------------------------------------------------- add into an empty group ---
+   Unobtrusive on purpose: an empty group is a hint, not a call to action. */
+.column-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px;
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.column-add:hover { border-color: var(--accent); color: var(--text-dim); }
+
+.column-add svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  opacity: 0.8;
+}
+
+.column-add:hover svg { opacity: 1; }

@@ -1,0 +1,258 @@
+/* Table layout: grid, cells and inline editors. */
+
+.table-wrap {
+  margin: 0 32px 44px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: auto;
+  background: var(--surface);
+}
+
+table { width: 100%; border-collapse: collapse; }
+
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--head-bg);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+th.sortable { cursor: pointer; user-select: none; }
+
+th.sortable:hover { color: var(--text); }
+
+th.sorted-asc::after { content: " \25B2"; font-size: 9px; }
+
+th.sorted-desc::after { content: " \25BC"; font-size: 9px; }
+
+.col-check { width: 38px; }
+
+tbody tr { border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+
+tbody tr:last-child { border-bottom: none; }
+
+tbody tr:nth-child(even) { background: var(--row-alt); }
+
+tbody tr:hover { background: var(--row-hover); }
+
+tbody tr.selected { background: var(--row-selected); }
+
+tbody td { padding: 6px 8px; vertical-align: top; }
+
+.cell-input, .cell-select {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 5px 7px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.cell-input:hover, .cell-select:hover { border-color: var(--border); }
+
+.cell-input:focus, .cell-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.cell-select { cursor: pointer; }
+
+.cell-select option { background: var(--surface-2); color: var(--text); }
+
+.task-id {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 5px 7px;
+  white-space: nowrap;
+}
+
+.date-cell {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 5px 7px;
+  white-space: nowrap;
+}
+
+.desc-cell { min-width: 240px; max-width: 320px; }
+
+.desc-text {
+  max-height: 2.9em;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  cursor: text;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.desc-text.expanded { max-height: none; }
+
+.desc-text.markdown { white-space: normal; }
+
+.desc-text:hover { border-color: var(--border); }
+
+.desc-text .placeholder { color: var(--text-faint); }
+
+.desc-editor {
+  width: 100%;
+  min-height: 62px;
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 6px 7px;
+  resize: vertical;
+}
+
+.desc-editor:focus { outline: none; }
+
+.dep-cell { min-width: 170px; }
+
+.dep-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  padding: 3px 0;
+}
+
+.dep-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 99px;
+  font-family: var(--mono);
+  font-size: 11px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.dep-chip.ok { color: var(--ok); border-color: var(--ok); }
+
+.dep-chip.open { color: var(--warn); border-color: var(--warn); }
+
+.dep-chip.missing { color: var(--danger); border-color: var(--danger); }
+
+.dep-chip button {
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.dep-chip button:hover { opacity: 1; }
+
+.dep-add {
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: 99px;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 6px;
+  cursor: pointer;
+  max-width: 46px;
+}
+
+.dep-add:focus { outline: none; border-color: var(--accent); max-width: none; }
+
+.dep-add option { background: var(--surface-2); color: var(--text); }
+
+.chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chip.tone-ok { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+
+.chip.tone-warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+
+.chip.tone-danger { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+
+.chip.tone-muted { background: var(--surface-2); color: var(--text-faint); }
+
+/* Row highlight after arriving from the board's jump button. */
+@keyframes row-flash {
+  0%, 60% { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+  100% { background: transparent; }
+}
+
+tbody tr.flash { animation: row-flash 1.6s ease-out; }
+
+/* Rows sit flush against one another, so a per-row ring would draw a stack of
+   touching frames. Instead a run of adjacent pinned rows is framed once: every
+   pinned row carries the side edges, and only the first and last of a run carry
+   the top and bottom, so the run reads as a single block. Run boundaries are
+   marked in layouts.js. The row background is left alone; the frame alone
+   carries the signal. */
+/* Each cell composes up to four edges. They live in custom properties because
+   separate rules would overwrite one another's box-shadow rather than add to
+   it, and a corner cell needs two edges at once. */
+tbody tr.is-pinned td {
+  box-shadow:
+    var(--edge-top, 0 0 transparent),
+    var(--edge-bottom, 0 0 transparent),
+    var(--edge-left, 0 0 transparent),
+    var(--edge-right, 0 0 transparent);
+}
+
+tbody tr.is-pinned td {
+  --pin-line: color-mix(in srgb, var(--status-accent) 75%, transparent);
+}
+
+tbody tr.is-pinned td:first-child { --edge-left: inset 1.5px 0 0 0 var(--pin-line); }
+
+tbody tr.is-pinned td:last-child { --edge-right: inset -1.5px 0 0 0 var(--pin-line); }
+
+tbody tr.is-pinned-first td { --edge-top: inset 0 1.5px 0 0 var(--pin-line); }
+
+tbody tr.is-pinned-last td { --edge-bottom: inset 0 -1.5px 0 0 var(--pin-line); }
+
+/* Inset shadows follow the element's border-radius, so rounding the corner
+   cells rounds the frame even though the table uses collapsed borders. */
+tbody tr.is-pinned-first td:first-child { border-top-left-radius: 6px; }
+
+tbody tr.is-pinned-first td:last-child { border-top-right-radius: 6px; }
+
+tbody tr.is-pinned-last td:first-child { border-bottom-left-radius: 6px; }
+
+tbody tr.is-pinned-last td:last-child { border-bottom-right-radius: 6px; }
+
+tbody tr.is-pinned .task-id {
+  color: color-mix(in srgb, var(--status-accent) 70%, var(--text-dim));
+}
+
+/* The label alone rolls; animating the trigger would drag the caret with it. */
+td .cell-select, .card-status { overflow: hidden; }
+
+/* Rows slide to their new place instead of jumping. Driven from layouts.js,
+   which measures before and after and plays the difference back. */
+tbody tr.reflowing { will-change: transform; }

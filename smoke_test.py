@@ -12,10 +12,10 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
-from planner.api import create_app
+from planner.web import create_app
 from planner.config import database_path
-from planner.repository import SqliteRepository
-from planner.service import PlannerService
+from planner.storage import SqliteRepository
+from planner.domain import PlannerService
 
 service = PlannerService(SqliteRepository(database_path()))
 client = TestClient(create_app(service))
@@ -100,7 +100,7 @@ assert next(t for t in service.list_tasks() if t["id"] == 1000)["status"] == "In
 assert service.apply_recurrence_resets() == 0
 print(" 9. weekly reset fires once per window: OK")
 
-from planner.recurrence import WeeklyRule
+from planner.domain.recurrence import WeeklyRule
 weekly = WeeklyRule()
 probe = datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc)
 assert weekly.last_boundary(probe) == datetime(2026, 9, 7, 1, 0, tzinfo=timezone.utc)
@@ -193,7 +193,7 @@ from pathlib import Path
 migrated = SqliteRepository(Path(legacy))
 tasks = {t.id: t for t in migrated.list_tasks()}
 assert tasks[1000].dependencies == [] and tasks[1001].dependencies == [1000], tasks
-from planner.repository import DB_SCHEMA_VERSION
+from planner.storage import DB_SCHEMA_VERSION
 assert sqlite3.connect(legacy).execute("PRAGMA user_version").fetchone()[0] \
        == DB_SCHEMA_VERSION
 SqliteRepository(Path(legacy))  # rerunning the migration must be a no-op
@@ -231,8 +231,8 @@ def palette_after_migration(path, kind):
     return {d.value: d.color for d in repo.list_definitions() if d.kind == kind}
 
 
-from planner.config import DEFAULT_DEFINITIONS
-from planner.repository import STOCK_PALETTES
+from planner.defaults import DEFAULT_DEFINITIONS
+from planner.storage import STOCK_PALETTES
 
 # Every palette ever shipped must be recognised and refreshed.
 for kind, shipped_sets in STOCK_PALETTES.items():
@@ -265,30 +265,35 @@ print("13b. every shipped palette refreshes; any customised one is kept: OK")
 
 import subprocess, shutil
 if shutil.which("node"):
-    harness = """
-const fs=require("fs"),vm=require("vm");
-const sb={window:{},document:{addEventListener(){}}};sb.globalThis=sb;vm.createContext(sb);
-for(const f of ["dropdown.js","markdown.js","tooltip.js","themes.js","layouts.js",
-                "board.js","app.js"])
-  vm.runInContext(fs.readFileSync("planner/static/"+f,"utf8"),sb,{filename:f});
-if(!sb.window.PlannerThemes||!sb.window.PlannerLayouts||!sb.window.PlannerTooltip
-   ||!sb.window.PlannerMarkdown||!sb.window.PlannerDropdown)
-  throw new Error("missing namespace");
+    graph_check = """
+const stub = () => new Proxy(function () {}, {
+  get: (t, k) => (k === "then" ? undefined : stub()),
+  apply: () => stub(), set: () => true,
+});
+globalThis.window = { addEventListener() {}, getComputedStyle: () => ({}) };
+globalThis.document = {
+  addEventListener() {}, body: stub(), documentElement: stub(),
+  createElement: (t) => (t === "canvas"
+    ? { getContext: () => ({ font: "", measureText: (s) => ({ width: s.length * 7 }) }) }
+    : stub()),
+  querySelector: () => stub(), getElementById: () => stub(),
+};
+globalThis.requestAnimationFrame = (fn) => fn();
+await import(process.cwd() + "/planner/static/js/app.js");
 """
-    subprocess.run(["node", "-e", harness], check=True)
-    print("14. the seven scripts coexist in one global scope: OK")
+    subprocess.run(["node", "--input-type=module", "-e", graph_check], check=True)
+    print("14. the module import graph resolves from the entry point: OK")
 else:
-    print("14. script-collision check skipped (node not installed)")
+    print("14. module graph check skipped (node not installed)")
 
 if shutil.which("node"):
     markdown_checks = """
-const fs=require("fs"),vm=require("vm");
-const sb={window:{},document:{addEventListener(){},createElement:()=>({getContext:()=>({font:"",
-  measureText:t=>({width:t.length*7})})})}};
-sb.globalThis=sb;vm.createContext(sb);
-for(const f of ["markdown.js","tooltip.js"])
-  vm.runInContext(fs.readFileSync("planner/static/"+f,"utf8"),sb,{filename:f});
-const md=new sb.window.PlannerMarkdown.MarkdownRenderer();
+globalThis.document = { createElement: () => ({ getContext: () => ({
+  font: "", measureText: (s) => ({ width: s.length * 7 }) }) }) };
+const base = process.cwd() + "/planner/static/js/";
+const { MarkdownRenderer } = await import(base + "ui/markdown.js");
+const { TooltipController } = await import(base + "ui/tooltip.js");
+const md = new MarkdownRenderer();
 const eq=(got,want,label)=>{ if(got!==want) throw new Error(label+"\\n got: "+got+"\\nwant: "+want); };
 
 eq(md.render("**b** and *i*"),"<p><strong>b</strong> and <em>i</em></p>","inline emphasis");
@@ -307,16 +312,16 @@ if(md.render("`**x**`").includes("<strong>"))
   throw new Error("inline rules leaked into code span");
 
 // Clamp detection must not trust scrollHeight, which lies for -webkit-line-clamp.
-const tip=new sb.window.PlannerTooltip.TooltipController();
-sb.window.getComputedStyle=()=>({webkitLineClamp:"2",paddingLeft:"7px",paddingRight:"7px",
-  borderLeftWidth:"0px",borderRightWidth:"0px",font:"12px Inter"});
+const tip = new TooltipController();
+globalThis.window = { getComputedStyle: () => ({webkitLineClamp:"2",paddingLeft:"7px",paddingRight:"7px",
+  borderLeftWidth:"0px",borderRightWidth:"0px",font:"12px Inter"}) };
 const cell={tagName:"DIV",clientWidth:300,clientHeight:40,scrollHeight:40};
 if(tip.isClipped(cell,"Run Hepit")) throw new Error("short text flagged as clipped");
 if(!tip.isClipped(cell,"Run Apollo Lua Disruption rotation B and C with Nekros or Khora, "+
   "then radshare the relic in recruit chat until the Prime Chassis drops"))
   throw new Error("long text not flagged as clipped");
 """
-    subprocess.run(["node", "-e", markdown_checks], check=True)
+    subprocess.run(["node", "--input-type=module", "-e", markdown_checks], check=True)
     print("15. markdown rendering, HTML escaping and clamp detection: OK")
 else:
     print("15. markdown checks skipped (node not installed)")
@@ -354,20 +359,20 @@ print("17. duplicating copies every field, clears status, lands below source: OK
 
 if shutil.which("node"):
     board_checks = """
-const fs=require("fs"),vm=require("vm");
 function el(){return {classList:{add(){},remove(){},toggle(){}},dataset:{},style:{},innerHTML:"",
   value:"",textContent:"",hidden:false,addEventListener(){},querySelector:()=>el(),
   querySelectorAll:()=>[],appendChild(){}};}
-const sb={window:{},document:{addEventListener(){},body:el(),createElement:(t)=>t==="canvas"
-  ?{getContext:()=>({font:"",measureText:s=>({width:s.length*7})})}:el()}};
-sb.globalThis=sb;vm.createContext(sb);
-for(const f of ["dropdown.js","markdown.js","tooltip.js","themes.js","layouts.js",
-                "board.js","app.js"])
-  vm.runInContext(fs.readFileSync("planner/static/"+f,"utf8"),sb,{filename:f});
+globalThis.window = { addEventListener() {} };
+globalThis.document = { addEventListener(){}, body: el(), createElement: (t) => t === "canvas"
+  ? { getContext: () => ({ font: "", measureText: (s) => ({ width: s.length * 7 }) }) } : el() };
 
-const L=sb.window.PlannerLayouts;
-const reg=new L.LayoutRegistry("table");
-reg.register(L.TableLayout); reg.register(L.BoardLayout);
+const base = process.cwd() + "/planner/static/js/";
+const { TableLayout } = await import(base + "layouts/table.js");
+const { BoardLayout } = await import(base + "layouts/board.js");
+const { LayoutRegistry } = await import(base + "layouts/registry.js");
+const { MarkdownRenderer } = await import(base + "ui/markdown.js");
+const reg = new LayoutRegistry("table");
+reg.register(TableLayout); reg.register(BoardLayout);
 if(reg.list().length!==2) throw new Error("both layouts must register");
 
 const store={
@@ -378,7 +383,7 @@ const store={
                priority:[{value:"High"},{value:"Low"}],category:[{value:"Foundry"}]},
   recurrence:[{key:"One-off"},{key:"Weekly"}],settings:{},
   valuesFor(k){return (this.definitions[k]||[]).map(d=>d.value);},colorFor(){return null;}};
-const b=new L.BoardLayout({store,markdown:new sb.window.PlannerMarkdown.MarkdownRenderer(),
+const b=new BoardLayout({store,markdown:new MarkdownRenderer(),
   selection:{has:()=>false},commit(){},persist(){}});
 const shape=()=>b.buildColumns(b.visibleTasks()).map(c=>c.label+":"+c.tasks.length).join(",");
 
@@ -394,15 +399,15 @@ if(!b.canDrag()) throw new Error("drag must be on while grouped");
 b.groupBy="\\u0000none";
 if(shape()!=="All tasks:3") throw new Error("ungrouped board is one bucket: "+shape());
 """
-    subprocess.run(["node", "-e", board_checks], check=True)
+    subprocess.run(["node", "--input-type=module", "-e", board_checks], check=True)
     print("18. board grouping across every axis: OK")
 else:
     print("18. board grouping checks skipped (node not installed)")
 
-for path in ("/", "/static/app.js", "/static/layouts.js", "/static/themes.js",
-             "/static/tooltip.js", "/static/markdown.js", "/static/board.js",
-             "/static/dropdown.js",
-             "/static/styles.css"):
+for path in ("/", "/static/js/app.js", "/static/js/layouts/table.js",
+             "/static/js/layouts/board.js", "/static/js/themes.js",
+             "/static/js/ui/tooltip.js", "/static/js/ui/markdown.js",
+             "/static/js/ui/dropdown.js", "/static/css/main.css"):
     assert client.get(path).status_code == 200, path
 print("19. frontend assets served: OK")
 
@@ -423,7 +428,7 @@ print("20. every toolbar action is an icon with a tooltip and a label: OK")
 # set to None. Uvicorn's default logging config inspects them and dies before
 # the server exists, so both the guard and the log_config bypass must hold.
 import uvicorn
-from planner.app import ensure_streams
+from planner.runtime.server import ensure_streams
 
 real_out, real_err = sys.stdout, sys.stderr
 try:
@@ -450,7 +455,7 @@ print("21. starts with no stdout/stderr, as a windowed build does: OK")
 import http.server
 import json as _json
 import threading as _threading
-from planner import app as app_module
+from planner.runtime import server as app_module
 
 assert app_module.probe_running_instance() is None, "no session file means no instance"
 
@@ -522,7 +527,7 @@ client.put("/api/definitions", json={"kind": "priority", "entries": [
 
 html = client.get("/").text
 assert "def-grip" not in html, "the grip is rendered by app.js, not baked into the page"
-grip_js = client.get("/static/app.js").text
+grip_js = client.get("/static/js/modals/definitions.js").text
 assert "def-grip" in grip_js and 'draggable="true"' in grip_js
 assert "rowAfterPointer" in grip_js and "bindReordering" in grip_js
 print("24. definition order is persisted and the drag handle is wired: OK")

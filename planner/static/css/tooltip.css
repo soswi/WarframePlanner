@@ -1,0 +1,42 @@
+/* Cursor-anchored tooltip. */
+
+/* Custom tooltip. Positioned from JS against the cursor, so it needs no anchor
+   relationship in the markup and never gets clipped by the scrolling table. */
+.tooltip-bubble {
+  position: fixed;
+  z-index: 200;
+  max-width: 380px;
+  padding: 8px 11px;
+  background: var(--surface-3);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: 8px;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.tooltip-bubble.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* The tooltip drops the clamp entirely, so Markdown can breathe there. */
+.tooltip-bubble.rich { white-space: normal; }
+
+.tooltip-bubble.rich .md-pre { max-width: 100%; }
+
+/* Tooltip tinted with the value's own colour, set inline per cell. */
+.tooltip-bubble.tinted {
+  border-color: var(--tooltip-accent, var(--border));
+  border-left-color: var(--tooltip-accent, var(--accent));
+  color: var(--tooltip-accent, var(--text));
+}

@@ -1,0 +1,21 @@
+/**
+ * Stylesheet entry point.
+ *
+ * Split by area rather than kept in one file, and assembled with @import so
+ * there is no build step. Order matters only for tokens.css, which defines the
+ * custom properties every other file reads; the rest target distinct selectors.
+ */
+
+@import "tokens.css";
+@import "banner.css";
+@import "toolbar.css";
+@import "tabs.css";
+@import "controls.css";
+@import "dropdown.css";
+@import "table.css";
+@import "board.css";
+@import "modal.css";
+@import "markdown.css";
+@import "tooltip.css";
+@import "feedback.css";
+@import "scrollbar.css";
