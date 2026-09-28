@@ -14,14 +14,24 @@ from ...models import PlannerError
 APP_SIGNATURE = "warframe-planner"
 
 
-def build_router(on_shutdown: Optional[Callable[[], None]] = None) -> APIRouter:
+def build_router(
+    on_shutdown: Optional[Callable[[], None]] = None,
+    environment: Optional[dict[str, Any]] = None,
+) -> APIRouter:
     """Return the system routes.
 
     Args:
         on_shutdown: Called to stop the server. Absent in builds that embed the
             app without owning the process.
+        environment: Description of the data environment, shown by the client.
     """
     router = APIRouter()
+    described = environment or {"test": False, "label": ""}
+
+    @router.get("/environment")
+    def get_environment() -> dict[str, Any]:
+        """Which data environment this instance runs against."""
+        return described
 
     @router.get("/ping")
     def ping() -> dict[str, Any]:

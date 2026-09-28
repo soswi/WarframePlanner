@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -19,6 +19,7 @@ API_PREFIX = "/api"
 def build_api_router(
     service: PlannerService,
     on_shutdown: Optional[Callable[[], None]] = None,
+    environment: Optional[dict[str, Any]] = None,
 ) -> APIRouter:
     """Combine every area router under the API prefix.
 
@@ -26,7 +27,7 @@ def build_api_router(
     reconcile a partial update against what it already holds.
     """
     router = APIRouter(prefix=API_PREFIX)
-    router.include_router(system.build_router(on_shutdown))
+    router.include_router(system.build_router(on_shutdown, environment))
     router.include_router(tasks.build_router(service))
     router.include_router(definitions.build_router(service))
     router.include_router(transfer.build_router(service))
@@ -36,12 +37,14 @@ def build_api_router(
 def create_app(
     service: PlannerService,
     on_shutdown: Optional[Callable[[], None]] = None,
+    environment: Optional[dict[str, Any]] = None,
 ) -> FastAPI:
     """Build the application.
 
     Args:
         service: Domain facade every route delegates to.
         on_shutdown: Callable that stops the process, wired by the runtime.
+        environment: Description of the data environment, from the runtime.
     """
     app = FastAPI(title=APP_TITLE, docs_url=None, redoc_url=None)
 
@@ -50,7 +53,7 @@ def create_app(
         """Surface a broken rule as a 400 with the message shown verbatim."""
         return JSONResponse(status_code=400, content={"detail": str(exc)})
 
-    app.include_router(build_api_router(service, on_shutdown))
+    app.include_router(build_api_router(service, on_shutdown, environment))
     root = static_dir()
 
     @app.get("/")
