@@ -3,7 +3,10 @@
 Track the activities you set yourself in Warframe — farms, grinds, prime sets,
 syndicate standing, weekly resets — in one local planner that stays on your PC.
 
-[![Latest release](https://img.shields.io/github/v/release/soswi/WarframePlanner?include_prereleases&label=release)](https://github.com/soswi/WarframePlanner/releases)
+Get `WarframePlanner-0.2.0.exe` from the
+[0.2.0 release](https://github.com/soswi/WarframePlanner/releases/tag/v0.2.0)
+and run it. Older versions are on the
+[releases page](https://github.com/soswi/WarframePlanner/releases).
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
 <!--
