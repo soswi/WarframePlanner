@@ -1,0 +1,293 @@
+{
+  "schema_version": 2,
+  "exported_at": "2026-09-28T14:25:26.766008+00:00",
+  "tasks": [
+    {
+      "id": 1009,
+      "activity": "Open Relics",
+      "category": "Platinum",
+      "description": "Farm Prime Parts for Plats",
+      "priority": "Medium",
+      "status": "Done",
+      "dependencies": [],
+      "recurrence": "Weekly",
+      "last_updated": "2026-09-28",
+      "position": 0,
+      "extra": {}
+    },
+    {
+      "id": 1008,
+      "activity": "Dual Toxocyst Incarnon",
+      "category": "Build",
+      "description": "Farm Dual Toxocyst Incarnon from Circuit. Wating for the correct rotation.",
+      "priority": "High",
+      "status": "Stuck",
+      "dependencies": [],
+      "recurrence": "One-off",
+      "last_updated": "2026-09-28",
+      "position": 1,
+      "extra": {}
+    },
+    {
+      "id": 1007,
+      "activity": "Complete the SP",
+      "category": "Mastery Rank",
+      "description": "Unlock every node on steel path",
+      "priority": "Low",
+      "status": "In Progress",
+      "dependencies": [],
+      "recurrence": "One-off",
+      "last_updated": "2026-09-28",
+      "position": 2,
+      "extra": {}
+    },
+    {
+      "id": 1006,
+      "activity": "Reach MR 18",
+      "category": "Mastery Rank",
+      "description": "",
+      "priority": "High",
+      "status": "Active",
+      "dependencies": [
+        1003
+      ],
+      "recurrence": "One-off",
+      "last_updated": "2026-09-28",
+      "position": 3,
+      "extra": {}
+    },
+    {
+      "id": 1005,
+      "activity": "Zariman Kuva",
+      "category": "Kuva",
+      "description": "Buy kuva from [Yonta](https://wiki.warframe.com/w/Archimedean_Yonta)",
+      "priority": "",
+      "status": "",
+      "dependencies": [],
+      "recurrence": "One-off",
+      "last_updated": null,
+      "position": 4,
+      "extra": {}
+    },
+    {
+      "id": 1004,
+      "activity": "Iron Wake Kuva",
+      "category": "Kuva",
+      "description": "Buy kuva from [Palladino](https://wiki.warframe.com/w/Palladino)",
+      "priority": "Very High",
+      "status": "Done",
+      "dependencies": [],
+      "recurrence": "Weekly",
+      "last_updated": "2026-09-28",
+      "position": 5,
+      "extra": {}
+    },
+    {
+      "id": 1003,
+      "activity": "Follie",
+      "category": "Mastery Rank",
+      "description": "Go thru this boring as hell waste of time activity of farming [Atramentum](https://wiki.warframe.com/w/Atramentum)\n",
+      "priority": "Low",
+      "status": "",
+      "dependencies": [],
+      "recurrence": "One-off",
+      "last_updated": null,
+      "position": 6,
+      "extra": {}
+    },
+    {
+      "id": 1002,
+      "activity": "Archon Hunt",
+      "category": "Event",
+      "description": "[Archon Hunt Wiki](https://wiki.warframe.com/w/Archon_Hunt)",
+      "priority": "Very High",
+      "status": "Active",
+      "dependencies": [],
+      "recurrence": "Weekly",
+      "last_updated": "2026-09-28",
+      "position": 7,
+      "extra": {}
+    },
+    {
+      "id": 1001,
+      "activity": "Forma Gyre",
+      "category": "Level Up",
+      "description": "Put 8 Forma in to the Gyre Warframe",
+      "priority": "Medium",
+      "status": "In Progress",
+      "dependencies": [],
+      "recurrence": "One-off",
+      "last_updated": "2026-09-28",
+      "position": 8,
+      "extra": {}
+    },
+    {
+      "id": 1000,
+      "activity": "Gyre",
+      "category": "Build",
+      "description": "Forma and mod the Gyre Warframe",
+      "priority": "Medium",
+      "status": "Stuck",
+      "dependencies": [
+        1001
+      ],
+      "recurrence": "One-off",
+      "last_updated": "2026-09-28",
+      "position": 9,
+      "extra": {}
+    }
+  ],
+  "definitions": {
+    "category": [
+      {
+        "kind": "category",
+        "value": "Void Fissure",
+        "color": "#fda817",
+        "position": 0
+      },
+      {
+        "kind": "category",
+        "value": "Credits",
+        "color": "#0f97ff",
+        "position": 1
+      },
+      {
+        "kind": "category",
+        "value": "Platinum",
+        "color": "#c7eeff",
+        "position": 2
+      },
+      {
+        "kind": "category",
+        "value": "Resources",
+        "color": "#9ea39e",
+        "position": 3
+      },
+      {
+        "kind": "category",
+        "value": "Build",
+        "color": "#39fe74",
+        "position": 4
+      },
+      {
+        "kind": "category",
+        "value": "Standing",
+        "color": "#552ef5",
+        "position": 5
+      },
+      {
+        "kind": "category",
+        "value": "Preparation",
+        "color": "#e64777",
+        "position": 6
+      },
+      {
+        "kind": "category",
+        "value": "Event",
+        "color": "#f472b6",
+        "position": 7
+      },
+      {
+        "kind": "category",
+        "value": "Clan",
+        "color": "#c084fc",
+        "position": 8
+      },
+      {
+        "kind": "category",
+        "value": "Alliance",
+        "color": "#fe4876",
+        "position": 9
+      },
+      {
+        "kind": "category",
+        "value": "Level Up",
+        "color": "#20ee9f",
+        "position": 10
+      },
+      {
+        "kind": "category",
+        "value": "Mastery Rank",
+        "color": "#e879f9",
+        "position": 11
+      },
+      {
+        "kind": "category",
+        "value": "Kuva",
+        "color": "#ff2e43",
+        "position": 12
+      },
+      {
+        "kind": "category",
+        "value": "Grind",
+        "color": "#8a14ff",
+        "position": 13
+      }
+    ],
+    "priority": [
+      {
+        "kind": "priority",
+        "value": "Very High",
+        "color": "#ec4657",
+        "position": 0
+      },
+      {
+        "kind": "priority",
+        "value": "High",
+        "color": "#fda817",
+        "position": 1
+      },
+      {
+        "kind": "priority",
+        "value": "Medium",
+        "color": "#ffc370",
+        "position": 2
+      },
+      {
+        "kind": "priority",
+        "value": "Low",
+        "color": "#9ac4fe",
+        "position": 3
+      }
+    ],
+    "status": [
+      {
+        "kind": "status",
+        "value": "Done",
+        "color": "#39fe74",
+        "position": 0
+      },
+      {
+        "kind": "status",
+        "value": "In Progress",
+        "color": "#4d91fe",
+        "position": 1
+      },
+      {
+        "kind": "status",
+        "value": "Stuck",
+        "color": "#ec4657",
+        "position": 2
+      },
+      {
+        "kind": "status",
+        "value": "Active",
+        "color": "#1ce9db",
+        "position": 3
+      }
+    ]
+  },
+  "settings": {
+    "done_status": "Done",
+    "reset_status": "In Progress",
+    "min_task_id": "1000",
+    "theme": "zariman",
+    "layout": "table",
+    "enforce_dependency_gate": "true",
+    "highlight_status": "Active",
+    "board_group_by": "status",
+    "board_card_size": "comfortable",
+    "reset_marker:Daily": "2026-09-28T01:00:00+00:00",
+    "reset_marker:Weekly": "2026-09-28T01:00:00+00:00"
+  }
+}

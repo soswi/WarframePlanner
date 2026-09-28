@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warframe Planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%231a1a19%27/%3E%3Cpath d=%27M16 6l9 20H7z%27 fill=%27none%27 stroke=%27%234fb3a3%27 stroke-width=%272.5%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E">
-<link rel="stylesheet" href="/static/styles.css">
+<link rel="stylesheet" href="/static/css/main.css">
 </head>
 <body>
 
@@ -98,7 +98,10 @@
     <div class="modal-body" id="defsBody"></div>
     <div class="modal-foot">
       <div class="settings-row" id="settingsRow"></div>
-      <button class="btn primary" id="btnSaveDefs">Save</button>
+      <div class="modal-actions">
+        <button class="btn" id="btnResetDefs">Reset to defaults</button>
+        <button class="btn primary" id="btnSaveDefs">Save</button>
+      </div>
     </div>
   </div>
 </div>
@@ -113,12 +116,7 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script src="/static/dropdown.js"></script>
-<script src="/static/markdown.js"></script>
-<script src="/static/tooltip.js"></script>
-<script src="/static/themes.js"></script>
-<script src="/static/layouts.js"></script>
-<script src="/static/board.js"></script>
-<script src="/static/app.js"></script>
+<script type="module" src="/static/js/app.js"></script>
+
 </body>
 </html>

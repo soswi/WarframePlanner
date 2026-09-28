@@ -1,0 +1,41 @@
+/* Design tokens and the document reset. */
+
+/* Base palette. Every value here is overwritten at runtime by the active theme
+   (see themes.js); these defaults only matter before the first paint. */
+:root {
+  --bg: #0b0f17;
+  --surface: #121826;
+  --surface-2: #172033;
+  --surface-3: #1d2740;
+  --border: #263149;
+  --text: #e6edf7;
+  --text-dim: #8b9ab4;
+  --text-faint: #5d6b85;
+  --accent: #4f8cff;
+  --accent-ink: #06101f;
+  --danger: #ef4444;
+  --ok: #10b981;
+  --warn: #f59e0b;
+  --row-alt: #101725;
+  --row-hover: #172033;
+  --row-selected: #16233d;
+  --head-bg: #0f1728;
+
+  --radius: 10px;
+  --mono: "JetBrains Mono", "Roboto Mono", ui-monospace, Menlo, Consolas, monospace;
+  --sans: "Inter", "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+/* Class selectors outrank the user-agent [hidden] rule, so make it explicit. */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  transition: background 0.25s ease, color 0.25s ease;
+}

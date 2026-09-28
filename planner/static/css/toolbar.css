@@ -1,0 +1,22 @@
+/* Action toolbar. */
+
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 32px 12px;
+  flex-wrap: wrap;
+  background: var(--bg);
+}
+
+.spacer { flex: 1; }
+
+.toolbar-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 3px;
+  background: var(--border);
+}
