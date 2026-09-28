@@ -119,42 +119,63 @@ override the directory. For backups, copy `planner.db` or use **Export**.
 ```
 main.py                    entry point
 planner/
-  config.py                paths, defaults
-  models.py                Task, Definition, PlannerError
-  repository.py            Repository (ABC) + SqliteRepository + schema migrations
-  recurrence.py            RecurrenceRule (ABC) + registry
-  presentation.py          Layout / Theme catalogues (code-defined, user-selectable)
-  service.py               PlannerService, all business rules
-  api.py                   FastAPI routes
-  app.py                   server and browser bootstrap
+  config.py                where the app runs: bundled resources, user data
+  defaults.py              what a fresh database contains
+  models/                  plain records: task, definition, errors
+  storage/                 persistence
+    base.py                the Repository contract
+    sqlite.py              the SQLite backend
+    schema.py              tables and the schema version
+    migrations.py          forward-only migration steps
+  domain/                  business rules, independent of storage and transport
+    planner.py             PlannerService, the facade the web layer uses
+    tasks.py               lifecycle, ordering, duplication, recurrence resets
+    dependencies.py        prerequisites, cycle detection, completion gate
+    definitions.py         the editable vocabularies
+    settings.py            typed settings access and validation
+    recurrence.py          recurrence rules and their registry
+    transfer.py            export and import
+  presentation/            catalogues the user picks from but cannot author
+    base.py  layouts.py  themes.py
+  web/                     HTTP transport
+    app.py                 application assembly
+    schemas.py             request bodies
+    routes/                one module per area
+  runtime/
+    server.py              ports, single-instance handover, streams, shutdown
   static/
-    markdown.js            MarkdownRenderer
-    tooltip.js             TooltipController, TextMeasurer
-    themes.js              Theme, ThemeRegistry
-    layouts.js             Layout (ABC), TableLayout, LayoutRegistry, SelectionModel
-    board.js               BoardLayout
-    app.js                 Api, Store, Toast, DefinitionsModal, PlannerApp
-    index.html, styles.css
+    index.html
+    css/                   split by area, assembled by main.css with @import
+    js/                    ES modules, entry point app.js
+      core/                api, store, toast, html escaping
+      ui/                  dropdown, tooltip, dot select, markdown renderer
+      layouts/             base, registry, selection, table, board
+      modals/              definitions dialog
 smoke_test.py              end-to-end API tests
 ```
 
-Dependencies point one way only: `service` knows the `Repository` interface,
-`api` knows `service`, neither knows about HTTP or SQL respectively.
+Dependencies point one way only: `domain` knows the `Repository` interface,
+`web` knows `domain`, and neither knows about HTTP or SQL respectively.
+`PlannerService` composes the domain services and is the single entry point, so
+the split behind it can change without touching the routes.
 
-Run the tests with `python smoke_test.py` (needs `pip install httpx`).
+The frontend loads as ES modules from a single `<script type="module">`, so
+imports are explicit and nothing depends on the order of script tags.
+
+Run the tests with `python smoke_test.py` (needs `pip install httpx`; the
+JavaScript checks are skipped when `node` is absent).
 
 ## Extending
 
-**A new theme.** Subclass `Theme` in `presentation.py`, fill in `tokens`, register
-it in `default_themes()`. The frontend receives the token map from `/api/state`
+**A new theme.** Subclass `Theme` in `presentation/themes.py`, fill in
+`tokens`, register it in `default_themes()`. The frontend receives the token map from `/api/state`
 and writes it onto `:root` as CSS custom properties, so no frontend change is
 needed. Users select themes; they cannot author them.
 
 **A new layout.** Subclass `Layout`, implement `mount()` and `render()`, register
-it with `LayoutRegistry` in `app.js`, and add a matching subclass in
-`presentation.py` so the backend accepts the key. `board.js` is the worked
-example: a separate file that reads `Layout` off the `PlannerLayouts` namespace
-and registers itself back onto it.
+it with `LayoutRegistry` in `js/app.js`, and add a matching subclass in
+`presentation/layouts.py` so the backend accepts the key. `js/layouts/board.js`
+is the worked example.
 
 The layout receives a context with `store`, `api`, `toast`, `selection`,
 `markdown`, `tooltip`, `commit()`, `persist()` and `focusTask()`, so it never
@@ -164,7 +185,7 @@ way the board stores `board_group_by` and `board_card_size`.
 The layout picker in the toolbar hides itself while only one layout is registered
 and appears automatically with the second.
 
-**A new recurrence.** One class in `recurrence.py`:
+**A new recurrence.** One class in `domain/recurrence.py`:
 
 ```python
 class MonthlyRule(RecurrenceRule):
@@ -179,12 +200,14 @@ class MonthlyRule(RecurrenceRule):
 
 Add it to `default_registry()`; the dropdown updates itself.
 
-**A new task field.** Add it to `Task`, to `Task.EDITABLE_FIELDS`, to `SCHEMA`,
-add a migration step in `SqliteRepository._migrate()`, and add a column descriptor
-in `TableLayout.buildColumns()`. The `extra` JSON field takes ad-hoc data without
+**A new task field.** Add it to `Task` in `models/task.py`, to
+`Task.EDITABLE_FIELDS`, to `SCHEMA` in `storage/schema.py`, add a step in
+`storage/migrations.py`, and add a column descriptor in
+`TableLayout.buildColumns()`. The `extra` JSON field takes ad-hoc data without
 any schema change.
 
-**More Markdown syntax.** Push onto `MarkdownRenderer.inlineRules` for span-level
+**More Markdown syntax.** Push onto `MarkdownRenderer.inlineRules` in
+`js/ui/markdown.js` for span-level
 syntax, or add a branch in `renderBlocks()` for block-level. The renderer escapes
 its input before any rule runs and only emits tags it builds itself, so raw HTML
 in a description is inert and link targets are scheme-checked. Keep new rules
@@ -196,8 +219,17 @@ text is supplementary rather than a clipped copy of what is already on screen,
 and `data-tooltip-format="markdown"` to render it through a formatter registered
 on the controller.
 
-**A different storage backend.** Implement `Repository` and change the one line
-in `build_service()`.
+**A different storage backend.** Implement `Repository` from `storage/base.py`
+and change the one line in `build_service()` in `runtime/server.py`.
+
+## Licence
+
+MIT; see `LICENSE`. Third-party components, including two interface patterns
+adapted from Uiverse and every packaged runtime dependency, are listed in
+`THIRD-PARTY-NOTICES.md`.
+
+Warframe is a trademark of Digital Extremes Ltd. This is an unofficial fan-made
+tool, not affiliated with or endorsed by Digital Extremes.
 
 ## Limitations
 
